@@ -197,7 +197,7 @@ export default function PlanCheckout({ plan, cycle, defaultEmail = '', defaultNa
             <h3>{plan.name} Plan is active</h3>
             <p>Invoice <b>{result.invoice.id}</b> · {inr(result.invoice.total)}</p>
             <p>Next billing date: <b>{result.subscription.nextBillingDate}</b></p>
-            <p className="pc-mail">{result.emailed ? `📧 Your invoice (PDF) was e-mailed to ${email}.` : '📧 E-mail is not set up on the server yet — download the invoice PDF from the billing history below.'}</p>
+            <p className="pc-mail">{result.emailed ? `📧 Your receipt and invoice (PDF) were e-mailed to ${email}.` : `📧 E-mail was not sent${result.emailError ? `: ${result.emailError}` : ''}. Use "Email me" in the billing history to try again.`}</p>
             <button className="pc-btn" onClick={onClose}>Done</button>
           </div>
         ) : (
