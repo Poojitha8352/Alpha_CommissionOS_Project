@@ -172,7 +172,7 @@ router.post('/billing/free', ...guard, wrap(async (req, res) => {
     source: 'free',
     price: priceFor(b.planId, b.cycle),
     method: 'Free plan',
-    days: 365,
+    days: config.freeTrialDays || 30,
     accountId: req.account.id,
   });
   res.status(201).json(out);
@@ -347,4 +347,8 @@ router.post('/billing/invoices/:id/email', ...guard, wrap(async (req, res) => {
   res.json({ emailed, to, error: emailed ? '' : mailError() });
 }));
 
+<<<<<<< HEAD
 module.exports = router;
+=======
+module.exports = router;
+>>>>>>> e49ef05 (Updated CommissionOS frontend and billing features)
