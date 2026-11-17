@@ -3939,6 +3939,23 @@ function ModuleSubscriptionBilling({
                     >
                       <Receipt className="w-3.5 h-3.5" /> Receipt PDF
                     </button>
+                    <button
+                      type="button"
+                      data-allow="all"
+                      onClick={async () => {
+                        try {
+                          const to = window.prompt('Send receipt + invoice to which e-mail?', inv.payerEmail || currentUserEmail || '');
+                          if (!to) return;
+                          const r = await api.post(`/billing/invoices/${inv.id}/email`, { email: to });
+                          notify(r.emailed ? `Receipt e-mailed to ${r.to}.` : `E-mail not sent: ${r.error}`);
+                        } catch (err) {
+                          notify(`E-mail not sent: ${err.message}`);
+                        }
+                      }}
+                      className="ml-2 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold inline-flex items-center gap-1.5 whitespace-nowrap"
+                    >
+                      <Mail className="w-3.5 h-3.5" /> Email me
+                    </button>
                   </td>
                 </tr>
               ))}
