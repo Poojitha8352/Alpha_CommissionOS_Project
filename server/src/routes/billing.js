@@ -13,7 +13,7 @@ const { COLLECTIONS, SINGLETONS, fromRow, monotonicNow } = require('../lib/colle
 const { priceFor } = require('../lib/plans');
 const { dmy } = require('../lib/format');
 const razorpay = require('../lib/razorpay');
-const { sendMail } = require('../lib/mailer');
+const { sendMail, mailError } = require('../lib/mailer');
 const { subscriptionInvoicePdf, subscriptionReceiptPdf } = require('../lib/invoicePdf');
 
 const router = express.Router();
@@ -126,6 +126,7 @@ async function activate({ planId, cycle, email, source, price, method, days, raz
   const subscription = await prisma.subscription.upsert({ where: { id: 1 }, create: { id: 1, ...subData }, update: subData });
   const emailed = await emailInvoice(invoice, email || (payer && payer.email));
   return {
+    emailError: emailed ? '' : mailError(),
     invoice: fromRow(COLLECTIONS.billingInvoices, invoice),
     subscription: fromRow(SINGLETONS.subscription, subscription),
     emailed,
@@ -333,6 +334,17 @@ router.post('/billing/razorpay-webhook', wrap(async (req, res) => {
     }
   }
   res.json({ ok: true });
+}));
+
+// re-send the receipt + invoice e-mail for one of your invoices (admin: any invoice; user: only their own)
+router.post('/billing/invoices/:id/email', ...guard, wrap(async (req, res) => {
+  const invoice = await prisma.billingInvoice.findUnique({ where: { id: req.params.id } });
+  if (!invoice) throw httpError(404, 'Invoice not found.');
+  if (req.account.role !== 'admin' && invoice.accountId !== req.account.id) throw httpError(403, 'This invoice belongs to another account.');
+  const to = String((req.body && req.body.email) || invoice.payerEmail || req.account.email || '').trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(to)) throw httpError(400, 'Enter a valid e-mail address.');
+  const emailed = await emailInvoice(invoice, to);
+  res.json({ emailed, to, error: emailed ? '' : mailError() });
 }));
 
 module.exports = router;
