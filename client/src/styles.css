@@ -2877,7 +2877,7 @@
 .anim-module tbody tr:nth-child(n+6), .anim-portal tbody tr:nth-child(n+6) { animation-delay: .3s; }
 tbody tr > td { transition: background-color .2s ease, box-shadow .2s ease; }
 tbody tr:hover > td { background-color: rgba(220, 38, 38, 0.14); }
-tbody tr[data-row-active="true"] > td { background-color: #FEE2E2 !important; }
+tbody tr[data-row-active="true"] > td { background-color: rgba(220, 38, 38, 0.24) !important; color: #FAFAFA; }
 tbody tr[data-row-active="true"] > td:first-child { box-shadow: inset 4px 0 0 #DC2626; }
 tbody tr[data-row-active="true"] { animation: rowPick .35s ease; }
 
@@ -3110,3 +3110,24 @@ aside [class*="text-slate-300/"] { color: rgba(212, 212, 216, .85); }
 aside [class*="text-slate-400/"] { color: rgba(161, 161, 170, .9); }
 aside [class*="text-blue-100/"], aside [class*="text-blue-200/"] { color: rgba(254, 202, 202, .9); }
 [class*="text-blue-100/"], [class*="text-blue-200/"], [class*="text-blue-50/"] { color: rgba(254, 226, 226, .92); }
+
+
+/* ===== dark banners / cards: keep every label readable (their text colours were being remapped to dark) ===== */
+[class*="from-[#0A0A0B]"], [class*="from-[#050505]"], [class*="from-black"], [class*="bg-[#0A0A0B]"] {
+  --color-slate-100: #F4F4F5; --color-slate-200: #E4E4E7; --color-slate-300: #D4D4D8; --color-slate-400: #A1A1AA; --color-slate-500: #A1A1AA;
+  --color-emerald-100: #D1FAE5; --color-emerald-200: #A7F3D0; --color-emerald-300: #6EE7B7; --color-emerald-400: #34D399;
+  --color-amber-100: #FEF3C7; --color-amber-200: #FDE68A; --color-amber-300: #FCD34D;
+  --color-sky-100: #E0F2FE; --color-sky-200: #BAE6FD; --color-sky-300: #7DD3FC;
+  --color-blue-100: #FEE2E2; --color-blue-200: #FECACA; --color-blue-300: #FCA5A5;
+  color: #FAFAFA;
+}
+[class*="from-[#0A0A0B]"] label, [class*="from-[#050505]"] label { color: #E4E4E7; }
+[class*="from-[#0A0A0B]"] p, [class*="from-[#050505]"] p { color: #D4D4D8; }
+
+/* ===== BRIGHT MODE (toggle in the header) =====
+   The dark theme is inverted back: page colours flip, hues are kept, pictures stay as they are. */
+html[data-theme="light"] { filter: invert(1) hue-rotate(180deg); background: #0B0B0C; }
+html[data-theme="light"] img, html[data-theme="light"] video, html[data-theme="light"] canvas,
+html[data-theme="light"] iframe, html[data-theme="light"] svg image { filter: invert(1) hue-rotate(180deg); }
+html[data-theme="light"] .pc-qr img { filter: invert(1) hue-rotate(180deg); }
+html { transition: filter .25s ease; }
