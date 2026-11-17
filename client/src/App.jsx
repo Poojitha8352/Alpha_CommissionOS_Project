@@ -10,8 +10,36 @@ import {
   MessageSquare, Paperclip, Send, HelpCircle, Menu, ChevronDown, Info,
   CreditCard, KeyRound, LogOut, LogIn, UserPlus, Mail, Shield, Zap,
   Crown, Receipt, Calendar, CheckSquare, Phone, MessageCircle, MapPin,
-  QrCode, Smartphone, Copy, History, User, EyeOff
+  QrCode, Smartphone, Copy, History, User, EyeOff, Sun, Moon
 } from 'lucide-react';
+
+// ---- dark / bright theme (remembered per browser) ----
+const THEME_KEY = 'auron-commissionos:theme';
+const readTheme = () => { try { return window.localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'; } catch (err) { return 'dark'; } };
+const applyTheme = (t) => { try { document.documentElement.setAttribute('data-theme', t); } catch (err) { /* ignore */ } };
+applyTheme(readTheme());
+
+function ThemeToggle() {
+  const [theme, setTheme] = useState(readTheme);
+  const flip = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    applyTheme(next);
+    try { window.localStorage.setItem(THEME_KEY, next); } catch (err) { /* ignore */ }
+  };
+  return (
+    <button
+      type="button"
+      data-allow="all"
+      onClick={flip}
+      className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 transition"
+      title={theme === 'dark' ? 'Switch to bright mode' : 'Switch to dark mode'}
+      aria-label="Toggle dark / bright mode"
+    >
+      {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
+    </button>
+  );
+}
 import { api, tokenStore } from './api';
 import PlanCheckout, { FreeSubscriptionBanner } from './PlanCheckout.jsx';
 import { startViewOnlyGuard } from './viewOnly';
@@ -2122,6 +2150,8 @@ export default function App() {
               {currentUser.name} ({currentUser.role})
             </span>
 
+            <ThemeToggle />
+
             {isAdmin && (
               <button
                 onClick={() => setActiveModule('org')}
@@ -2702,7 +2732,7 @@ function ModuleOrgSettings({
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-2">Sidebar Theme Colour</label>
                 <div className="flex flex-wrap items-center gap-3">
-                  {['#c3a124', '#271dbf', '#5b1929', '#219d1d', '#ef4d0d', '#f80e0e',].map((c) => (
+                  {['#0A0A0B', '#1E1B4B', '#064E3B', '#1E293B', '#311042', '#450A0A'].map((c) => (
                     <button
                       key={c}
                       type="button"
@@ -2720,12 +2750,12 @@ function ModuleOrgSettings({
 
             <div className={`${sectionCard} lg:col-span-2`}>
               <div className="text-xs font-bold uppercase text-slate-500 mb-3">Live Sidebar Preview</div>
-              <div className="rounded-2xl p-4 space-y-3 text-white shadow-inner" style={{ backgroundColor: form.primaryColor || '#0e0e0d' }}>
+              <div className="rounded-2xl p-4 space-y-3 text-white shadow-inner" style={{ backgroundColor: form.primaryColor || '#0A0A0B' }}>
                 <div className="flex items-center gap-2.5">
                   {form.logoDataUrl ? (
                     <img src={form.logoDataUrl} alt="" className="w-9 h-9 rounded-xl object-cover" />
                   ) : (
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-extrabold" style={{ backgroundColor: form.accentColor || '#f44911' }}>{monogram}</div>
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-extrabold" style={{ backgroundColor: form.accentColor || '#DC2626' }}>{monogram}</div>
                   )}
                   <div className="min-w-0">
                     <div className="text-sm font-bold truncate">{form.name}</div>
