@@ -1,6 +1,7 @@
 const config = require('../config');
 
 let transporter = null;
+let lastError = '';
 function getTransporter() {
   if (!config.smtp.host) return null;
   if (!transporter) {
@@ -18,14 +19,18 @@ function getTransporter() {
 // Returns true if the mail was handed to the SMTP server, false if mail is not configured / failed.
 async function sendMail({ to, subject, text, html, replyTo, attachments }) {
   const t = getTransporter();
-  if (!t) return false;
+  if (!t) { lastError = 'E-mail is not set up on the server: SMTP_HOST is empty in server/.env.'; console.error('[mail] ' + lastError); return false; }
   try {
+    lastError = '';
     await t.sendMail({ from: config.smtp.from, to, subject, text, html, replyTo, attachments });
     return true;
   } catch (err) {
+    lastError = err.message || 'Could not send the e-mail.';
     console.error('[mail] failed:', err.message);
     return false;
   }
 }
 
-module.exports = { sendMail };
+const mailError = () => lastError;
+
+module.exports = { sendMail, mailError };
