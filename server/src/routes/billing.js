@@ -347,8 +347,5 @@ router.post('/billing/invoices/:id/email', ...guard, wrap(async (req, res) => {
   res.json({ emailed, to, error: emailed ? '' : mailError() });
 }));
 
-<<<<<<< HEAD
 module.exports = router;
-=======
 module.exports = router;
->>>>>>> e49ef05 (Updated CommissionOS frontend and billing features)

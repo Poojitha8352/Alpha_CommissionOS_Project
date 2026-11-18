@@ -3,13 +3,10 @@ const dns = require('dns');
 
 let transporter = null;
 let lastError = '';
-<<<<<<< HEAD
-=======
 
 // Node 17+ lo DNS order IPv4 first untundi. IPv6 first cheyadaniki (mee network lo IPv6 work avtundi)
 try { dns.setDefaultResultOrder('verbatim'); } catch (_) {}
 
->>>>>>> e49ef05 (Updated CommissionOS frontend and billing features)
 function getTransporter() {
   if (!config.smtp.host) return null;
   if (!transporter) {
@@ -40,12 +37,6 @@ function getTransporter() {
 // Returns true if the mail was handed to the SMTP server, false if mail is not configured / failed.
 async function sendMail({ to, subject, text, html, replyTo, attachments }) {
   const t = getTransporter();
-<<<<<<< HEAD
-  if (!t) { lastError = 'E-mail is not set up on the server: SMTP_HOST is empty in server/.env.'; console.error('[mail] ' + lastError); return false; }
-  try {
-    lastError = '';
-    await t.sendMail({ from: config.smtp.from, to, subject, text, html, replyTo, attachments });
-=======
   if (!t) {
     lastError = 'E-mail is not set up on the server: SMTP_HOST is empty in server/.env.';
     console.error('[mail] ' + lastError);
@@ -62,7 +53,6 @@ async function sendMail({ to, subject, text, html, replyTo, attachments }) {
       replyTo,
       attachments,
     });
->>>>>>> e49ef05 (Updated CommissionOS frontend and billing features)
     return true;
   } catch (err) {
     lastError = err.message || 'Could not send the e-mail.';
@@ -74,8 +64,4 @@ async function sendMail({ to, subject, text, html, replyTo, attachments }) {
 
 const mailError = () => lastError;
 
-<<<<<<< HEAD
 module.exports = { sendMail, mailError };
-=======
-module.exports = { sendMail, mailError };
->>>>>>> e49ef05 (Updated CommissionOS frontend and billing features)
