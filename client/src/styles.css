@@ -3159,6 +3159,5 @@ html:not([data-theme="light"]) table tbody tr[data-row-active="true"] > td { bac
 html:not([data-theme="light"]) table tbody tr[data-row-active="true"] > td:first-child { box-shadow: inset 4px 0 0 #DC2626; }
 /* dark rows that should stay dark (totals / highlighted rows written with the black brand colour) */
 html:not([data-theme="light"]) table .bg-\[\#0A0A0B\], html:not([data-theme="light"]) table [class*="from-[#0A0A0B]"] { color: #FAFAFA; --color-slate-300: #D4D4D8; --color-slate-400: #A1A1AA; }
-=======
 html { transition: filter .25s ease; }
->>>>>>> e49ef05 (Updated CommissionOS frontend and billing features)
+
