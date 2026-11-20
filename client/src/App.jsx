@@ -1174,11 +1174,15 @@ function LoginPage({ mode, authConfig, onSignIn, onRegister, onGoogle }) {
                 </button>
               </form>
 
-              <div className="flex items-center gap-3 text-[11px] text-slate-400 font-semibold">
-                <span className="h-px flex-1 bg-slate-200" /> OR{" "}
-                <span className="h-px flex-1 bg-slate-200" />
-              </div>
-              <GoogleSignInButton config={authConfig} onResult={handleGoogle} />
+              {isAdmin && (
+                <>
+                  <div className="flex items-center gap-3 text-[11px] text-slate-400 font-semibold">
+                    <span className="h-px flex-1 bg-slate-200" /> OR{" "}
+                    <span className="h-px flex-1 bg-slate-200" />
+                  </div>
+                  <GoogleSignInButton config={authConfig} onResult={handleGoogle} />
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -3421,7 +3425,6 @@ export default function App() {
     "dashboard",
   );
   const [roleView, setRoleView] = usePersistentState("roleView", "owner"); // 'owner' | 'salesperson'
-  const [profileOpen, setProfileOpen] = useState(false);
   const [inviteToken] = useState(() => {
     try {
       return typeof window !== "undefined"
@@ -3600,6 +3603,17 @@ useEffect(() => {
 
 // hides edit / delete / approve... controls for view-only users and employees (the server refuses those writes anyway)
 const mainRef = useRef(null);
+// opening a module always starts at the top of the page (not where the previous module was scrolled to)
+useEffect(() => {
+  window.scrollTo(0, 0);
+  let el = mainRef.current;
+  while (el) {
+    el.scrollTop = 0;
+    el = el.parentElement;
+  }
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+}, [activeModule]);
 useEffect(
   () => startViewOnlyGuard(mainRef.current, authRole || "admin"),
   [authRole, dataReady, activeModule],
@@ -3942,8 +3956,33 @@ const navGroups = [
 ].filter((g) => g.items.length > 0);
 
 const allNavItems = navGroups.flatMap((g) => g.items);
+
+// a partner only ever sees their own records (matched by login email, then by name)
+const lcv2 = (v) => String(v || "").trim().toLowerCase();
+const myRecord = isPartner
+  ? employees.find((e) => lcv2(e.email) === lcv2(session?.email)) ||
+  employees.find((e) => lcv2(e.name) === lcv2(session?.name))
+  : null;
+const mineBy = (list, test) =>
+  isPartner ? (myRecord ? list.filter(test) : []) : list;
+const scoped = isPartner
+  ? {
+    employees: myRecord ? [myRecord] : [],
+    transactions: mineBy(
+      transactions,
+      (t) => t.salespersonId === myRecord.id || lcv2(t.salesperson) === lcv2(myRecord.name),
+    ),
+    statements: mineBy(
+      statements,
+      (x) => x.employeeId === myRecord.id || lcv2(x.employee) === lcv2(myRecord.name),
+    ),
+    payouts: mineBy(payouts, (p) => lcv2(p.employee) === lcv2(myRecord.name)),
+    reversals: mineBy(reversals, (r) => lcv2(r.employee) === lcv2(myRecord.name)),
+    adjustments: mineBy(adjustments, (a) => lcv2(a.employee) === lcv2(myRecord.name)),
+  }
+  : { employees, transactions, statements, payouts, reversals, adjustments };
 // a saved module this role may not open (e.g. "access" for a non-admin) falls back to the home screen
-const current = allNavItems.some((n) => n.id === activeModule)
+const current = allNavItems.some((n) => n.id === activeModule) || activeModule === "account"
   ? activeModule
   : isEmployee
     ? "myprofile"
@@ -4081,9 +4120,9 @@ return (
         <div
           role="button"
           tabIndex={0}
-          onClick={() => setProfileOpen(true)}
+          onClick={() => setActiveModule("account")}
           onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") setProfileOpen(true);
+            if (e.key === "Enter" || e.key === " ") setActiveModule("account");
           }}
           title="View profile details"
           className="flex items-center gap-3 p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition"
@@ -4135,13 +4174,6 @@ return (
             {org?.fiscalYear ? org.fiscalYear.split(" ")[0] : ""}{" "}
             {org?.fiscalYear ? org.fiscalYear.split(" ")[1] : ""}
           </span>
-          <button
-            onClick={handleSignOut}
-            className="inline-flex items-center gap-1 text-rose-300 hover:text-rose-200 font-semibold"
-            title="Sign Out / Test Login & Registration Screen"
-          >
-            <LogOut className="w-3.5 h-3.5" /> Sign Out
-          </button>
         </div>
       </div>
     </aside>
@@ -4168,7 +4200,9 @@ return (
             </div>
             <ChevronRight className="hidden sm:block w-4 h-4 text-slate-400 shrink-0" />
             <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">
-              {allNavItems.find((n) => n.id === current)?.label}
+              {current === "account"
+                ? "My Profile"
+                : allNavItems.find((n) => n.id === current)?.label}
             </h1>
           </div>
         </div>
@@ -4192,7 +4226,7 @@ return (
           )}
           <button
             type="button"
-            onClick={() => setProfileOpen(true)}
+            onClick={() => setActiveModule("account")}
             title="View profile"
             className="group hidden md:inline-flex items-center gap-2.5 pl-1.5 pr-3.5 py-1 rounded-full bg-gradient-to-r from-rose-600 via-red-600 to-orange-500 text-white shadow-md hover:shadow-lg hover:scale-[1.03] active:scale-95 transition-all duration-300"
           >
@@ -4223,113 +4257,6 @@ return (
           )}
         </div>
       </header>
-
-      {/* Logged-in user profile details popup (animated) */}
-      {profileOpen && (() => {
-        const me = employees.find(
-          (e) => (e.email || "").toLowerCase() === (session?.email || "").toLowerCase(),
-        );
-        const rows = [
-          ["Name", session?.name || currentUser.name || "—"],
-          ["Email", session?.email || currentUser.email || "—"],
-          ["Role", currentUser.role || session?.role || "—"],
-          ["Access Level", isPartner ? "Partner" : session?.role || "—"],
-          ["Organisation", org?.name || "—"],
-          ...(me
-            ? [
-              ["Employee ID", me.id],
-              ["Type", me.type],
-              ["Department / Branch", `${me.department} / ${me.branch}`],
-              ["Manager", me.manager],
-              ["Joining Date", me.joiningDate],
-              ["Commission Plan", me.planName],
-              ["Status", me.status],
-            ]
-            : []),
-        ];
-        return (
-          <div
-            className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
-            style={{ animation: "pfFade .25s ease-out" }}
-            onClick={() => setProfileOpen(false)}
-          >
-            <style>{`
-              @keyframes pfFade { from { opacity: 0 } to { opacity: 1 } }
-              @keyframes pfPop { 0% { opacity: 0; transform: translateY(40px) scale(.85) } 60% { opacity: 1; transform: translateY(-6px) scale(1.02) } 100% { transform: translateY(0) scale(1) } }
-              @keyframes pfRow { from { opacity: 0; transform: translateX(-24px) } to { opacity: 1; transform: translateX(0) } }
-              @keyframes pfRing { 0% { box-shadow: 0 0 0 0 rgba(255,255,255,.55) } 100% { box-shadow: 0 0 0 18px rgba(255,255,255,0) } }
-              @keyframes pfFloat { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-5px) } }
-              @keyframes pfShine { 0% { background-position: 0% 50% } 100% { background-position: 200% 50% } }
-            `}</style>
-            <div
-              className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden"
-              style={{ animation: "pfPop .55s cubic-bezier(.2,.9,.3,1.2)" }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div
-                className="relative px-6 pt-7 pb-6 text-white text-center overflow-hidden"
-                style={{
-                  backgroundImage:
-                    "linear-gradient(110deg,#7f1d1d,#dc2626,#f97316,#dc2626,#7f1d1d)",
-                  backgroundSize: "200% 100%",
-                  animation: "pfShine 6s linear infinite",
-                }}
-              >
-                <span className="absolute -top-10 -left-10 w-32 h-32 rounded-full bg-white/10" />
-                <span className="absolute -bottom-12 -right-8 w-40 h-40 rounded-full bg-white/10" />
-                <button
-                  type="button"
-                  onClick={() => setProfileOpen(false)}
-                  className="absolute right-3 top-3 p-1.5 rounded-lg hover:bg-white/20 hover:rotate-90 transition-transform duration-300"
-                  aria-label="Close"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-                <div
-                  className="relative mx-auto w-20 h-20 rounded-full bg-white/20 border-2 border-white/70 flex items-center justify-center text-2xl font-extrabold"
-                  style={{ animation: "pfRing 1.8s ease-out infinite, pfFloat 3s ease-in-out infinite" }}
-                >
-                  {(session?.name || session?.email || "US").trim().slice(0, 2).toUpperCase()}
-                  <span className="absolute bottom-1 right-1 w-4 h-4 rounded-full bg-emerald-400 border-2 border-white" />
-                </div>
-                <div className="relative mt-3 text-lg font-extrabold truncate">
-                  {session?.name || "User"}
-                </div>
-                <div className="relative text-xs text-white/85 truncate">{session?.email}</div>
-                <span className="relative inline-block mt-2 px-3 py-0.5 rounded-full bg-white/20 border border-white/30 text-[10px] font-bold uppercase tracking-wider">
-                  {currentUser.role || session?.role}
-                </span>
-              </div>
-              <div className="p-5 text-xs max-h-[45vh] overflow-y-auto">
-                {rows.map(([k, v], i) => (
-                  <div
-                    key={k}
-                    className="flex items-center justify-between gap-4 py-2.5 px-2 rounded-lg hover:bg-slate-50 transition border-b border-slate-100 last:border-0"
-                    style={{ animation: `pfRow .45s ease-out ${0.15 + i * 0.06}s both` }}
-                  >
-                    <span className="text-slate-500">{k}</span>
-                    <span className="font-bold text-slate-900 text-right break-all">{v}</span>
-                  </div>
-                ))}
-              </div>
-              {allNavItems.some((n) => n.id === "myprofile") && (
-                <div className="px-5 pb-5 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setProfileOpen(false);
-                      setActiveModule("myprofile");
-                    }}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-orange-500 hover:scale-105 active:scale-95 transition text-white text-xs font-bold shadow-md"
-                  >
-                    Open Full Profile
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Active Module Workspace */}
       <main
@@ -4370,11 +4297,12 @@ return (
               org={org}
               roleView={roleView}
               setRoleView={setRoleView}
-              employees={employees}
-              transactions={transactions}
-              statements={statements}
-              reversals={reversals}
-              adjustments={adjustments}
+              employees={scoped.employees}
+              transactions={scoped.transactions}
+              statements={scoped.statements}
+              reversals={scoped.reversals}
+              adjustments={scoped.adjustments}
+              onlyMine={isPartner}
               setActiveModule={setActiveModule}
             />
           )}
@@ -4394,6 +4322,18 @@ return (
           )}
           {current === "access" && (
             <ModuleAccessControl session={session} notify={notify} />
+          )}
+          {current === "account" && (
+            <ProfilePage
+              session={session}
+              roleText={currentUser.role || session?.role}
+              accessText={isPartner ? "Partner" : session?.role}
+              orgName={org?.name}
+              record={employees.find(
+                (e) => (e.email || "").toLowerCase() === (session?.email || "").toLowerCase(),
+              )}
+              onSignOut={handleSignOut}
+            />
           )}
           {current === "contact" && (
             <div className="space-y-6">
@@ -4492,10 +4432,10 @@ return (
           )}
           {current === "approvals" && (
             <ModuleApprovals
-              transactionsTotal={transactions.length}
-              statements={statements}
+              transactionsTotal={scoped.transactions.length}
+              statements={scoped.statements}
               setStatements={setStatements}
-              payouts={payouts}
+              payouts={scoped.payouts}
               setPayouts={setPayouts}
               accessLevel={authRole}
               currentUserName={session.name}
@@ -7438,6 +7378,70 @@ function ModuleSubscriptionBilling({
 // ============================================================================
 // MODULE 7: COMMISSION DASHBOARD (DUAL VIEWS: BUSINESS OWNER & SALESPERSON)
 // ============================================================================
+// ============================================================================
+// PROFILE PAGE (opened from the profile block at the bottom of the menu) — has the Sign Out button
+// ============================================================================
+function ProfilePage({ session, roleText, accessText, orgName, record, onSignOut }) {
+  const rows = [
+    ["Name", session?.name || "—"],
+    ["Email", session?.email || "—"],
+    ["Role", roleText || "—"],
+    ["Access Level", accessText || "—"],
+    ["Organisation", orgName || "—"],
+    ...(record
+      ? [
+        ["ID", record.id],
+        ["Type", record.type],
+        ["Department / Branch", `${record.department} / ${record.branch}`],
+        ["Manager", record.manager],
+        ["Joining Date", record.joiningDate],
+        ["Commission Plan", record.planName],
+        ["Status", record.status],
+      ]
+      : []),
+  ];
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-red-600 to-orange-500 text-white flex items-center justify-center text-xl font-extrabold shrink-0">
+            {(session?.name || session?.email || "US").trim().slice(0, 2).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-xl font-extrabold text-slate-900 truncate">
+              {session?.name || "User"}
+            </h2>
+            <p className="text-sm text-slate-500 truncate">{session?.email}</p>
+            <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold">
+              {roleText}
+            </span>
+          </div>
+        </div>
+        <button
+          type="button"
+          data-allow="all"
+          onClick={onSignOut}
+          className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold inline-flex items-center gap-2"
+        >
+          <LogOut className="w-4 h-4" /> Sign Out
+        </button>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+        <h3 className="text-base font-bold text-slate-900 mb-3">Profile Details</h3>
+        <div className="divide-y divide-slate-100 text-xs">
+          {rows.map(([k, v]) => (
+            <div key={k} className="flex items-center justify-between gap-4 py-3">
+              <span className="text-slate-500">{k}</span>
+              <span className="font-bold text-slate-900 text-right break-all">{v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ModuleDashboard({
   org,
   roleView,
@@ -7446,6 +7450,7 @@ function ModuleDashboard({
   transactions,
   reversals,
   adjustments,
+  onlyMine = false,
   setActiveModule,
 }) {
   const [dateFilter, setDateFilter] = useState("Nov 2026");
@@ -7509,6 +7514,36 @@ function ModuleDashboard({
       icon: RotateCcw,
     },
   ];
+
+  // partner view: every card shows only that partner's own numbers
+  const myRow = employees[0] || {};
+  const num = (v) => Number(v) || 0;
+  const mineValues = {
+    "Total Eligible Sales": num(myRow.eligibleSales),
+    "Calculated Commission": num(myRow.earnedCommission),
+    "Pending Commission": num(myRow.pendingCommission),
+    "Approved Commission": num(myRow.approvedCommission),
+    "Paid Commission": num(myRow.paidCommission),
+    "Outstanding Payouts": Math.max(0, num(myRow.approvedCommission) - num(myRow.paidCommission)),
+    "Reversed Commission": reversals.reduce((t, r) => t + num(r.reversedCommission), 0),
+  };
+  const mineSubs = {
+    "Total Eligible Sales": "Your validated sales",
+    "Calculated Commission": "Your earned commission",
+    "Pending Commission": "Awaiting sign-off",
+    "Approved Commission": "Ready for payout",
+    "Paid Commission": "Already paid to you",
+    "Outstanding Payouts": "Approved minus paid",
+    "Reversed Commission": "Clawbacks on your refunds",
+  };
+  const kpiList = onlyMine
+    ? ownerKpis.map((k) => ({
+      ...k,
+      value: formatINR(mineValues[k.label]),
+      sub: mineSubs[k.label],
+      badge: "Your data",
+    }))
+    : ownerKpis;
 
   const monthlySeries = [
     { month: "Jun", sales: 16.5, comm: 0.98 },
@@ -7763,14 +7798,15 @@ function ModuleDashboard({
           {/* KPI cards: 4 + 3 */}
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-              {ownerKpis.slice(0, 4).map(renderKpi)}
+              {kpiList.slice(0, 4).map(renderKpi)}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {ownerKpis.slice(4).map((k, i) => renderKpi(k, i + 4))}
+              {kpiList.slice(4).map((k, i) => renderKpi(k, i + 4))}
             </div>
           </div>
 
           {/* Analytics Row */}
+          {!onlyMine && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
               <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
@@ -7972,6 +8008,7 @@ function ModuleDashboard({
               </div>
             </div>
           </div>
+          )}
 
           {/* Top Performing Employees Leaderboard */}
           <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs">
