@@ -3393,15 +3393,26 @@ export default function App() {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
-  const [introDone, setIntroDone] = useState(true);
+  // opening animation (styles: "intro-*" in styles.css): plays on every fresh open, then moves on by itself
+  const [introDone, setIntroDone] = useState(false);
+  useEffect(() => {
+    if (introDone) return undefined;
+    const t = setTimeout(() => setIntroDone(true), 3400); // matches the CSS fade-out (2.7s + .6s)
+    return () => clearTimeout(t);
+  }, [introDone]);
   const loginMode =
     hash === "#admin" ? "admin" : hash === "#employee" ? "employee" : "user";
   const authRole = session ? session.role : null;
   ACCESS = authRole || "admin"; // read by the data hooks: view-only users / employees cannot send changes
   const isAdmin = authRole === "admin";
   const isEmployee = authRole === "employee";
+  const isPartner = authRole === "user"; // the non-admin "user" role is shown as "Partner"
   const currentUser = session
-    ? { name: session.name, email: session.email, role: session.roleLabel }
+    ? {
+      name: session.name,
+      email: session.email,
+      role: isPartner ? "Partner" : session.roleLabel,
+    }
     : { name: "", email: "", role: "" };
 
   // Active Module & Role View State
@@ -3410,6 +3421,7 @@ export default function App() {
     "dashboard",
   );
   const [roleView, setRoleView] = usePersistentState("roleView", "owner"); // 'owner' | 'salesperson'
+  const [profileOpen, setProfileOpen] = useState(false);
   const [inviteToken] = useState(() => {
     try {
       return typeof window !== "undefined"
@@ -3763,8 +3775,8 @@ const activePlan =
 const coreItems = [
   {
     id: "org",
-    label: "Organisation Settings",
-    badge: "Admin",
+    label: isPartner ? "My Organisation" : "Organisation Settings",
+    badge: isPartner ? "" : "Admin",
     icon: Building2,
     roles: ["admin", "user"],
   },
@@ -3905,13 +3917,23 @@ const navGroups = [
           },
         ]
         : []),
-      ...(!isEmployee
+      ...(!isEmployee && !isPartner
         ? [
           {
             id: "billing",
             label: isAdmin ? "Subscription & Billing" : "Subscription",
             badge: activePlan.name,
             icon: CreditCard,
+          },
+        ]
+        : []),
+      ...(isPartner
+        ? [
+          {
+            id: "contact",
+            label: "Contact Us — Any Query?",
+            badge: "Help",
+            icon: Phone,
           },
         ]
         : []),
@@ -3993,7 +4015,7 @@ return (
           {renderBrandMark()}
           <div className="min-w-0">
             <div className="text-sm font-bold text-white truncate tracking-tight">
-              {org.name}
+              {org.productName || "CommissionOS"}
             </div>
             <div className="text-[11px] text-slate-300/80 truncate">
               {org.tagline || "Auron CommissionOS"}
@@ -4036,14 +4058,16 @@ return (
                     />
                     <span className="truncate">{item.label}</span>
                   </span>
-                  <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded-md font-semibold ${isActive
-                      ? "bg-white/20 text-white"
-                      : "bg-black/25 text-slate-300"
-                      }`}
-                  >
-                    {item.badge}
-                  </span>
+                  {item.badge ? (
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded-md font-semibold ${isActive
+                        ? "bg-white/20 text-white"
+                        : "bg-black/25 text-slate-300"
+                        }`}
+                    >
+                      {item.badge}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -4054,7 +4078,16 @@ return (
       {/* Active Plan & Session Footer */}
       <div className="p-3.5 border-t border-white/10 space-y-2.5">
         {/* User Profile with Starting 2 Letters of Email */}
-        <div className="flex items-center gap-3 p-2 rounded-xl bg-white/5 border border-white/10">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setProfileOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") setProfileOpen(true);
+          }}
+          title="View profile details"
+          className="flex items-center gap-3 p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition"
+        >
           <div
             className="w-9 h-9 rounded-full flex items-center justify-center font-extrabold text-xs text-white shadow-sm shrink-0 border border-white/20 select-none bg-gradient-to-br from-red-600 to-rose-700"
             title={session?.email || "User profile"}
@@ -4075,7 +4108,7 @@ return (
           />
         </div>
 
-        {!isEmployee && (
+        {!isEmployee && !isPartner && (
           <button
             onClick={() => setActiveModule("billing")}
             className="w-full p-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 flex items-center justify-between text-left transition"
@@ -4141,7 +4174,7 @@ return (
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {!isEmployee && (
+          {!isEmployee && !isPartner && (
             <button
               onClick={() => setActiveModule("billing")}
               className="hidden md:inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition"
@@ -4154,12 +4187,28 @@ return (
           {!isAdmin && (
             <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold">
               <Lock className="w-3 h-3" />{" "}
-              {isEmployee ? "Limited edit" : "View only"}
+              {isEmployee ? "Limited edit" : isPartner ? "Partner access" : "View only"}
             </span>
           )}
-          <span className="hidden xl:inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-            {currentUser.name} ({currentUser.role})
-          </span>
+          <button
+            type="button"
+            onClick={() => setProfileOpen(true)}
+            title="View profile"
+            className="group hidden md:inline-flex items-center gap-2.5 pl-1.5 pr-3.5 py-1 rounded-full bg-gradient-to-r from-rose-600 via-red-600 to-orange-500 text-white shadow-md hover:shadow-lg hover:scale-[1.03] active:scale-95 transition-all duration-300"
+          >
+            <span className="relative">
+              <span className="w-7 h-7 rounded-full bg-white/25 border border-white/50 flex items-center justify-center text-[11px] font-extrabold">
+                {(currentUser.name || session?.email || "U").trim().slice(0, 2).toUpperCase()}
+              </span>
+              <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-white animate-pulse" />
+            </span>
+            <span className="text-left leading-tight">
+              <span className="block text-xs font-extrabold">{currentUser.name}</span>
+              <span className="block text-[10px] font-semibold text-white/80 tracking-wide uppercase">
+                {currentUser.role}
+              </span>
+            </span>
+          </button>
 
           <ThemeToggle />
 
@@ -4174,6 +4223,113 @@ return (
           )}
         </div>
       </header>
+
+      {/* Logged-in user profile details popup (animated) */}
+      {profileOpen && (() => {
+        const me = employees.find(
+          (e) => (e.email || "").toLowerCase() === (session?.email || "").toLowerCase(),
+        );
+        const rows = [
+          ["Name", session?.name || currentUser.name || "—"],
+          ["Email", session?.email || currentUser.email || "—"],
+          ["Role", currentUser.role || session?.role || "—"],
+          ["Access Level", isPartner ? "Partner" : session?.role || "—"],
+          ["Organisation", org?.name || "—"],
+          ...(me
+            ? [
+              ["Employee ID", me.id],
+              ["Type", me.type],
+              ["Department / Branch", `${me.department} / ${me.branch}`],
+              ["Manager", me.manager],
+              ["Joining Date", me.joiningDate],
+              ["Commission Plan", me.planName],
+              ["Status", me.status],
+            ]
+            : []),
+        ];
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
+            style={{ animation: "pfFade .25s ease-out" }}
+            onClick={() => setProfileOpen(false)}
+          >
+            <style>{`
+              @keyframes pfFade { from { opacity: 0 } to { opacity: 1 } }
+              @keyframes pfPop { 0% { opacity: 0; transform: translateY(40px) scale(.85) } 60% { opacity: 1; transform: translateY(-6px) scale(1.02) } 100% { transform: translateY(0) scale(1) } }
+              @keyframes pfRow { from { opacity: 0; transform: translateX(-24px) } to { opacity: 1; transform: translateX(0) } }
+              @keyframes pfRing { 0% { box-shadow: 0 0 0 0 rgba(255,255,255,.55) } 100% { box-shadow: 0 0 0 18px rgba(255,255,255,0) } }
+              @keyframes pfFloat { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-5px) } }
+              @keyframes pfShine { 0% { background-position: 0% 50% } 100% { background-position: 200% 50% } }
+            `}</style>
+            <div
+              className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden"
+              style={{ animation: "pfPop .55s cubic-bezier(.2,.9,.3,1.2)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                className="relative px-6 pt-7 pb-6 text-white text-center overflow-hidden"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(110deg,#7f1d1d,#dc2626,#f97316,#dc2626,#7f1d1d)",
+                  backgroundSize: "200% 100%",
+                  animation: "pfShine 6s linear infinite",
+                }}
+              >
+                <span className="absolute -top-10 -left-10 w-32 h-32 rounded-full bg-white/10" />
+                <span className="absolute -bottom-12 -right-8 w-40 h-40 rounded-full bg-white/10" />
+                <button
+                  type="button"
+                  onClick={() => setProfileOpen(false)}
+                  className="absolute right-3 top-3 p-1.5 rounded-lg hover:bg-white/20 hover:rotate-90 transition-transform duration-300"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <div
+                  className="relative mx-auto w-20 h-20 rounded-full bg-white/20 border-2 border-white/70 flex items-center justify-center text-2xl font-extrabold"
+                  style={{ animation: "pfRing 1.8s ease-out infinite, pfFloat 3s ease-in-out infinite" }}
+                >
+                  {(session?.name || session?.email || "US").trim().slice(0, 2).toUpperCase()}
+                  <span className="absolute bottom-1 right-1 w-4 h-4 rounded-full bg-emerald-400 border-2 border-white" />
+                </div>
+                <div className="relative mt-3 text-lg font-extrabold truncate">
+                  {session?.name || "User"}
+                </div>
+                <div className="relative text-xs text-white/85 truncate">{session?.email}</div>
+                <span className="relative inline-block mt-2 px-3 py-0.5 rounded-full bg-white/20 border border-white/30 text-[10px] font-bold uppercase tracking-wider">
+                  {currentUser.role || session?.role}
+                </span>
+              </div>
+              <div className="p-5 text-xs max-h-[45vh] overflow-y-auto">
+                {rows.map(([k, v], i) => (
+                  <div
+                    key={k}
+                    className="flex items-center justify-between gap-4 py-2.5 px-2 rounded-lg hover:bg-slate-50 transition border-b border-slate-100 last:border-0"
+                    style={{ animation: `pfRow .45s ease-out ${0.15 + i * 0.06}s both` }}
+                  >
+                    <span className="text-slate-500">{k}</span>
+                    <span className="font-bold text-slate-900 text-right break-all">{v}</span>
+                  </div>
+                ))}
+              </div>
+              {allNavItems.some((n) => n.id === "myprofile") && (
+                <div className="px-5 pb-5 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileOpen(false);
+                      setActiveModule("myprofile");
+                    }}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-orange-500 hover:scale-105 active:scale-95 transition text-white text-xs font-bold shadow-md"
+                  >
+                    Open Full Profile
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Active Module Workspace */}
       <main
@@ -4232,11 +4388,24 @@ return (
               setUsers={setUsers}
               rolePermissions={rolePermissions}
               setRolePermissions={setRolePermissions}
+              isPartner={isPartner}
               notify={notify}
             />
           )}
           {current === "access" && (
             <ModuleAccessControl session={session} notify={notify} />
+          )}
+          {current === "contact" && (
+            <div className="space-y-6">
+              <ContactSupportCard
+                org={org}
+                setOrg={setOrg}
+                canEdit={false}
+                notify={notify}
+                defaultName={session.name}
+                defaultEmail={session.email}
+              />
+            </div>
           )}
           {current === "billing" && (
             <ModuleSubscriptionBilling
@@ -4262,6 +4431,7 @@ return (
               setEmployees={setEmployees}
               policies={policies}
               departments={departments}
+              isPartner={isPartner}
               notify={notify}
             />
           )}
@@ -4269,6 +4439,7 @@ return (
             <ModulePolicies
               policies={policies}
               setPolicies={setPolicies}
+              canManage={isAdmin}
               notify={notify}
             />
           )}
@@ -4290,6 +4461,8 @@ return (
               setCalcRuns={setCalcRuns}
               engine={engine}
               setEngine={setEngine}
+              isPartner={isPartner}
+              canCalculate={isAdmin}
               notify={notify}
             />
           )}
@@ -4545,6 +4718,7 @@ function ModuleOrgSettings({
   setUsers,
   rolePermissions,
   setRolePermissions,
+  isPartner = false,
   notify,
 }) {
   const [form, setForm] = useState(org);
@@ -4683,7 +4857,7 @@ function ModuleOrgSettings({
       {node}
     </div>
   );
-  const tabs = [
+  const allTabs = [
     { id: "profile", label: "Company Profile", icon: Building2 },
     { id: "brand", label: "Brand & Theme", icon: Sparkles },
     { id: "rules", label: "Calculation Rules", icon: Calculator },
@@ -4692,6 +4866,8 @@ function ModuleOrgSettings({
     { id: "permissions", label: "Permissions", icon: Shield },
     { id: "data", label: "Data & Backup", icon: Download },
   ];
+  // partners only see the Company Profile tab
+  const tabs = isPartner ? allTabs.filter((t) => t.id === "profile") : allTabs;
   const monogram = (form.name || "Org")
     .split(" ")
     .slice(0, 2)
@@ -4811,12 +4987,24 @@ function ModuleOrgSettings({
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               {field(
-                "Workspace / Display Name *",
+                "Company Name * (shown in the top header)",
                 <input
                   required
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className={inputCls}
+                />,
+              )}
+              {field(
+                "Product Name (shown in the left sidebar)",
+                <input
+                  type="text"
+                  placeholder="CommissionOS"
+                  value={form.productName ?? "CommissionOS"}
+                  onChange={(e) =>
+                    setForm({ ...form, productName: e.target.value })
+                  }
                   className={inputCls}
                 />,
               )}
@@ -6615,17 +6803,6 @@ function ModuleSubscriptionBilling({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              document
-                .getElementById("contact-support")
-                ?.scrollIntoView({ behavior: "smooth" })
-            }
-            className="px-3 py-1 rounded-lg bg-white border border-amber-300 font-bold text-amber-950 hover:bg-amber-100 flex items-center gap-1.5"
-          >
-            <Phone className="w-3.5 h-3.5" /> Contact Us
-          </button>
           <span className="px-2.5 py-1 rounded-lg bg-amber-200/70 font-bold text-amber-950">
             GST (18%) Exclusive
           </span>
@@ -7146,15 +7323,6 @@ function ModuleSubscriptionBilling({
         </div>
       </div>
 
-      <ContactSupportCard
-        org={org}
-        setOrg={setOrg}
-        canEdit={isAdmin}
-        notify={notify}
-        defaultName={currentUserName}
-        defaultEmail={currentUserEmail}
-      />
-
       {checkoutPlan && (
         <PlanCheckout
           plan={checkoutPlan}
@@ -7281,6 +7449,7 @@ function ModuleDashboard({
   setActiveModule,
 }) {
   const [dateFilter, setDateFilter] = useState("Nov 2026");
+  const [kpiDetail, setKpiDetail] = useState(null);
 
   const ownerKpis = [
     {
@@ -7350,14 +7519,46 @@ function ModuleDashboard({
     { month: "Nov", sales: 25.0, comm: 1.5 },
   ];
 
+  // Decorative illustration shown behind each KPI card (inline SVG, no external images)
+  const kpiArt = (label) => {
+    const wrap = (c, body) =>
+      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 130' fill='none' stroke='${c}' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'>${body}</svg>`;
+    const map = {
+      "Total Eligible Sales": ["#2563eb", `<path d='M20 112h165'/><rect x='30' y='80' width='24' height='32' rx='3'/><rect x='70' y='62' width='24' height='50' rx='3'/><rect x='110' y='42' width='24' height='70' rx='3'/><rect x='150' y='20' width='24' height='92' rx='3'/><path d='M28 62l45-24 38 12 56-34'/><path d='M150 16h20v20'/>`],
+      "Calculated Commission": ["#6366f1", `<rect x='45' y='14' width='90' height='108' rx='12'/><rect x='58' y='28' width='64' height='22' rx='4'/><circle cx='68' cy='68' r='4'/><circle cx='90' cy='68' r='4'/><circle cx='112' cy='68' r='4'/><circle cx='68' cy='88' r='4'/><circle cx='90' cy='88' r='4'/><circle cx='112' cy='88' r='4'/><path d='M150 30l30 40M152 36a6 6 0 100 .1M178 66a6 6 0 100 .1'/>`],
+      "Pending Commission": ["#f59e0b", `<path d='M60 14h80M60 118h80'/><path d='M66 14c0 40 34 40 34 52s-34 12-34 52M134 14c0 40-34 40-34 52s34 12 34 52'/><path d='M82 100h36'/>`],
+      "Approved Commission": ["#059669", `<path d='M100 12l62 22v34c0 38-26 56-62 68-36-12-62-30-62-68V34z'/><path d='M70 70l22 22 40-44'/>`],
+      "Paid Commission": ["#0284c7", `<rect x='24' y='34' width='140' height='84' rx='14'/><path d='M24 54h140'/><path d='M130 12l36 14'/><circle cx='138' cy='86' r='10'/><path d='M44 98h40'/>`],
+      "Outstanding Payouts": ["#475569", `<rect x='28' y='28' width='144' height='94' rx='12'/><path d='M28 56h144M62 14v26M138 14v26'/><path d='M60 84h28M112 84h28M60 104h28'/>`],
+      "Reversed Commission": ["#e11d48", `<path d='M150 52a56 56 0 10 6 40'/><path d='M158 20v34h-34'/><path d='M84 62h30M84 82h30'/>`],
+    };
+    const [c, body] = map[label] || map["Total Eligible Sales"];
+    return { color: c, url: `url("data:image/svg+xml;utf8,${encodeURIComponent(wrap(c, body))}")` };
+  };
+
   const renderKpi = (kpi, idx) => {
     const Icon = kpi.icon;
+    const art = kpiArt(kpi.label);
     return (
       <div
         key={idx}
-        className="rounded-2xl bg-white border border-slate-200 p-5 shadow-xs hover:shadow-md transition flex flex-col gap-3"
+        role="button"
+        tabIndex={0}
+        data-allow="all"
+        onClick={() => setKpiDetail(kpi)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") setKpiDetail(kpi);
+        }}
+        title="Click to view full details"
+        style={{ backgroundImage: `linear-gradient(135deg, ${art.color}14, transparent 60%)` }}
+        className="rounded-2xl bg-white border border-slate-200 p-5 shadow-xs hover:shadow-md hover:border-blue-300 transition flex flex-col gap-3 cursor-pointer relative overflow-hidden group"
       >
-        <div className="flex items-center justify-between">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-3 -bottom-2 w-44 h-28 opacity-[0.16] group-hover:opacity-30 group-hover:scale-110 transition-all duration-500 bg-no-repeat bg-contain bg-right-bottom"
+          style={{ backgroundImage: art.url }}
+        />
+        <div className="flex items-center justify-between relative">
           <div
             className={`w-10 h-10 rounded-xl bg-gradient-to-br ${kpi.accent} text-white flex items-center justify-center shadow-sm`}
           >
@@ -7367,7 +7568,7 @@ function ModuleDashboard({
             {kpi.badge}
           </span>
         </div>
-        <div>
+        <div className="relative">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
             {kpi.label}
           </div>
@@ -7375,18 +7576,150 @@ function ModuleDashboard({
             {kpi.value}
           </div>
         </div>
-        <div className="pt-3 mt-auto border-t border-slate-100 text-xs text-slate-500">
-          {kpi.sub}
+        <div className="relative pt-3 mt-auto border-t border-slate-100 text-xs text-slate-500 flex items-center justify-between gap-2">
+          <span>{kpi.sub}</span>
+          <span className="text-blue-600 font-semibold whitespace-nowrap">Details →</span>
         </div>
       </div>
     );
   };
 
-  const rahul = employees.find((e) => e.id === "EMP001") || employees[0];
-  const rahulTxns = transactions.filter((t) => t.salesperson === "Rahul");
+  // ---- full-detail popup for every KPI card (built from live data) ----
+  const sum = (arr, f) => arr.reduce((t, x) => t + (Number(f(x)) || 0), 0);
+  const peopleTable = (title, field, totalLabel) => {
+    const rows = employees.map((e) => ({ ...e, v: field(e) }));
+    return {
+      total: sum(rows, (r) => r.v),
+      totalLabel,
+      headers: ["ID", "Name", "Type", "Plan", "Eligible Sales", title],
+      rows: rows.map((r) => [
+        r.id, r.name, r.type, r.planName, formatINR(r.eligibleSales), formatINR(r.v),
+      ]),
+    };
+  };
+  const buildKpiDetail = (label) => {
+    switch (label) {
+      case "Total Eligible Sales": {
+        const bySp = {};
+        transactions.forEach((t) => {
+          bySp[t.salesperson] = (bySp[t.salesperson] || 0) + (Number(t.eligibleBase) || 0);
+        });
+        return {
+          total: sum(transactions, (t) => t.eligibleBase),
+          totalLabel: "Total Eligible Base (all transactions)",
+          summary: Object.entries(bySp).map(([k, v]) => [k, formatINR(v)]),
+          summaryTitle: "By Salesperson / Partner",
+          headers: ["Txn ID", "Invoice", "Customer", "Product", "Date", "Salesperson", "Invoice Amt", "Discount", "Eligible Base", "Status"],
+          rows: transactions.map((t) => [
+            t.id, t.invoiceNumber, t.customer, t.product, t.date, t.salesperson,
+            formatINR(t.invoiceAmount), formatINR(t.discount), formatINR(t.eligibleBase), t.status,
+          ]),
+        };
+      }
+      case "Calculated Commission":
+        return peopleTable("Calculated Commission", (e) => e.earnedCommission, "Total Calculated Commission");
+      case "Pending Commission":
+        return peopleTable("Pending", (e) => e.pendingCommission, "Total Pending Commission");
+      case "Approved Commission":
+        return peopleTable("Approved", (e) => e.approvedCommission, "Total Approved Commission");
+      case "Paid Commission":
+        return peopleTable("Paid", (e) => e.paidCommission, "Total Paid Commission");
+      case "Outstanding Payouts":
+        return peopleTable("Outstanding (Approved − Paid)", (e) => Math.max(0, (Number(e.approvedCommission) || 0) - (Number(e.paidCommission) || 0)), "Total Outstanding Payouts");
+      case "Reversed Commission":
+        return {
+          total: sum(reversals, (r) => r.reversedCommission),
+          totalLabel: "Total Reversed Commission",
+          headers: ["Reversal ID", "Original TXN", "Employee", "Type", "Original Comm.", "Refund Amt", "Reversed", "Remaining", "Reason"],
+          rows: reversals.map((r) => [
+            r.id, `${r.transactionId} (${r.invoiceNumber})`, r.employee, r.type,
+            formatINR(r.originalCommission), formatINR(r.refundAmount),
+            formatINR(r.reversedCommission), formatINR(r.remainingCommission), r.reason,
+          ]),
+        };
+      default:
+        return { total: 0, totalLabel: "", headers: [], rows: [] };
+    }
+  };
+  const detail = kpiDetail ? buildKpiDetail(kpiDetail.label) : null;
 
   return (
     <div className="space-y-6">
+      {kpiDetail && detail && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setKpiDetail(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-5xl w-full shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 px-6 py-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-lg font-extrabold text-slate-900">{kpiDetail.label}</h3>
+                <p className="text-xs text-slate-500">
+                  {kpiDetail.sub} • Period: {dateFilter}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setKpiDetail(null)}
+                className="p-1.5 rounded-lg hover:bg-slate-100"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 overflow-y-auto text-xs">
+              <div className="rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 flex items-center justify-between">
+                <span className="font-semibold text-blue-800">{detail.totalLabel}</span>
+                <span className="text-xl font-extrabold text-blue-950">{formatINR(detail.total)}</span>
+              </div>
+              {detail.summary && detail.summary.length > 0 && (
+                <div>
+                  <h4 className="text-[11px] font-bold uppercase text-slate-500 mb-2">
+                    {detail.summaryTitle}
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {detail.summary.map(([k, v]) => (
+                      <span key={k} className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 font-semibold text-slate-800">
+                        {k}: <strong>{v}</strong>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-[11px] uppercase text-slate-500">
+                      {detail.headers.map((h) => (
+                        <th key={h} className="whitespace-nowrap py-3 px-3">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {detail.rows.length === 0 && (
+                      <tr>
+                        <td colSpan={detail.headers.length} className="py-6 text-center text-slate-400">
+                          No records found.
+                        </td>
+                      </tr>
+                    )}
+                    {detail.rows.map((row, i) => (
+                      <tr key={i} className="hover:bg-slate-50">
+                        {row.map((c, j) => (
+                          <td key={j} className="whitespace-nowrap py-2.5 px-3 text-slate-800">{c}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Executive Welcome Hero Banner */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#0A0A0B] via-[#400C0C] to-[#0A0A0B] text-white p-6 shadow-lg border border-slate-800">
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -7396,14 +7729,10 @@ function ModuleDashboard({
               {org.name} • Live Revenue & Incentive Intelligence
             </div>
             <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              {roleView === "owner"
-                ? "Executive Commission Command Center"
-                : `Welcome back, ${rahul.name} (${rahul.id})`}
+              Executive Commission Command Center
             </h2>
             <p className="text-sm text-slate-300 mt-1 max-w-2xl">
-              {roleView === "owner"
-                ? "Real-time visibility across eligible sales, multi-model commission accruals, approval bottlenecks, and payout liabilities."
-                : "Track your eligible sales pipeline, quota attainment progress, approved statements, and reversal adjustments."}
+              Real-time visibility across eligible sales, multi-model commission accruals, approval bottlenecks, and payout liabilities.
             </p>
           </div>
 
@@ -7424,32 +7753,12 @@ function ModuleDashboard({
               </option>
             </select>
 
-            <div className="flex bg-white/10 p-1 rounded-xl border border-white/15">
-              <button
-                onClick={() => setRoleView("owner")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${roleView === "owner"
-                  ? "bg-white text-slate-900 shadow-xs"
-                  : "text-slate-200"
-                  }`}
-              >
-                Business Owner View
-              </button>
-              <button
-                onClick={() => setRoleView("salesperson")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${roleView === "salesperson"
-                  ? "bg-emerald-400 text-slate-950 shadow-xs"
-                  : "text-slate-200"
-                  }`}
-              >
-                Salesperson View
-              </button>
-            </div>
           </div>
         </div>
       </div>
 
       {/* VIEW A: BUSINESS OWNER DASHBOARD */}
-      {roleView === "owner" ? (
+      {(
         <div key={`owner-${dateFilter}`} className="space-y-6 anim-switch">
           {/* KPI cards: 4 + 3 */}
           <div className="space-y-4">
@@ -7654,6 +7963,7 @@ function ModuleDashboard({
                   </div>
                 </div>
                 <button
+                  data-allow="all"
                   onClick={() => setActiveModule("payouts")}
                   className="text-xs font-semibold text-blue-600 hover:text-blue-800 whitespace-nowrap"
                 >
@@ -7675,6 +7985,7 @@ function ModuleDashboard({
                 </p>
               </div>
               <button
+                data-allow="all"
                 onClick={() => setActiveModule("employees")}
                 className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200"
               >
@@ -7754,175 +8065,6 @@ function ModuleDashboard({
             </div>
           </div>
         </div>
-      ) : (
-        /* VIEW B: SALESPERSON DASHBOARD (RAHUL - EMP001) */
-        <div key={`sales-${dateFilter}`} className="space-y-6 anim-switch">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            {[
-              {
-                label: "My Eligible Sales",
-                val: formatINR(rahul.eligibleSales),
-                color: "text-blue-600",
-                bg: "bg-blue-50",
-              },
-              {
-                label: "My Earned Commission",
-                val: formatINR(rahul.earnedCommission),
-                color: "text-slate-900",
-                bg: "bg-slate-100",
-              },
-              {
-                label: "My Pending Commission",
-                val: formatINR(rahul.pendingCommission),
-                color: "text-amber-600",
-                bg: "bg-amber-50",
-              },
-              {
-                label: "My Approved Commission",
-                val: formatINR(rahul.approvedCommission),
-                color: "text-emerald-600",
-                bg: "bg-emerald-50",
-              },
-              {
-                label: "My Paid Commission",
-                val: formatINR(rahul.paidCommission),
-                color: "text-sky-600",
-                bg: "bg-sky-50",
-              },
-            ].map((item) => (
-              <div
-                key={item.label}
-                className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs"
-              >
-                <div className="text-xs font-semibold text-slate-500">
-                  {item.label}
-                </div>
-                <div className={`text-2xl font-extrabold mt-2 ${item.color}`}>
-                  {item.val}
-                </div>
-                <div
-                  className={`mt-3 inline-block text-[11px] font-semibold px-2 py-0.5 rounded-md ${item.bg} ${item.color}`}
-                >
-                  {rahul.planName}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-              <h3 className="text-base font-bold text-slate-900">
-                My Monthly Target Progress
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Quota: {formatINR(rahul.monthlyTarget)}
-              </p>
-              <div className="my-6 flex items-center justify-center">
-                <div className="relative w-36 h-36 rounded-full border-[12px] border-emerald-500 flex flex-col items-center justify-center bg-emerald-50/40">
-                  <span className="text-2xl font-extrabold text-slate-900">
-                    {Math.round(
-                      (rahul.eligibleSales / rahul.monthlyTarget) * 100,
-                    )}
-                    %
-                  </span>
-                  <span className="text-[11px] font-semibold text-emerald-700">
-                    Achieved
-                  </span>
-                </div>
-              </div>
-              <div className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
-                You have exceeded your ₹5,00,000 quota by{" "}
-                <strong className="text-emerald-700">
-                  {formatINR(rahul.eligibleSales - rahul.monthlyTarget)}
-                </strong>
-                !
-              </div>
-            </div>
-
-            <div className="lg:col-span-2 space-y-6">
-              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-                <h3 className="text-base font-bold text-slate-900 mb-3">
-                  My Recent Sales Transactions
-                </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-slate-500 uppercase text-[11px]">
-                        <th className="py-2.5 px-2">TXN ID</th>
-                        <th className="py-2.5 px-2">Customer</th>
-                        <th className="py-2.5 px-2">Product</th>
-                        <th className="py-2.5 px-2 text-right">
-                          Eligible Base
-                        </th>
-                        <th className="py-2.5 px-2">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {rahulTxns.map((t) => (
-                        <tr key={t.id}>
-                          <td className="py-2.5 px-2 font-bold text-blue-600">
-                            {t.id}
-                          </td>
-                          <td className="py-2.5 px-2 font-medium">
-                            {t.customer}
-                          </td>
-                          <td className="py-2.5 px-2">{t.product}</td>
-                          <td className="py-2.5 px-2 text-right font-semibold">
-                            {formatINR(t.eligibleBase)}
-                          </td>
-                          <td className="py-2.5 px-2">
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold">
-                              {t.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-                <h3 className="text-base font-bold text-slate-900 mb-3">
-                  My Reversal & Adjustment Details
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  {reversals
-                    .filter((r) => r.employee === "Rahul")
-                    .map((r) => (
-                      <div
-                        key={r.id}
-                        className="p-3.5 rounded-xl bg-rose-50/70 border border-rose-200"
-                      >
-                        <div className="font-bold text-rose-800">
-                          Reversal {r.id} ({r.transactionId})
-                        </div>
-                        <div className="text-rose-700 mt-1">
-                          Refund: {formatINR(r.refundAmount)} • Reversed Comm:{" "}
-                          <strong>-{formatINR(r.reversedCommission)}</strong>
-                        </div>
-                      </div>
-                    ))}
-                  {adjustments
-                    .filter((a) => a.employee === "Rahul")
-                    .map((a) => (
-                      <div
-                        key={a.id}
-                        className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200"
-                      >
-                        <div className="font-bold text-emerald-800">
-                          Adjustment {a.id} ({a.statementId})
-                        </div>
-                        <div className="text-emerald-700 mt-1">
-                          {a.reason}: <strong>+{formatINR(a.amount)}</strong>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
@@ -7936,6 +8078,7 @@ function ModuleEmployees({
   setEmployees,
   policies,
   departments,
+  isPartner = false,
   notify,
 }) {
   const [search, setSearch] = useState("");
@@ -7968,9 +8111,17 @@ function ModuleEmployees({
 
   const [form, setForm] = useState(emptyForm);
 
-  const openAdd = () => {
+  const nextRecordId = (type) => {
+    const prefix = type === "Partner" ? "PRT" : "EMP";
+    const nums = employees
+      .filter((x) => String(x.id).startsWith(prefix))
+      .map((x) => parseInt(String(x.id).replace(/\D/g, ""), 10) || 0);
+    return `${prefix}${String(Math.max(0, ...nums) + 1).padStart(3, "0")}`;
+  };
+
+  const openAdd = (type = "Employee") => {
     setEditingEmp(null);
-    setForm({ ...emptyForm, id: `EMP00${employees.length + 1}` });
+    setForm({ ...emptyForm, type, id: nextRecordId(type) });
     setModalOpen(true);
   };
 
@@ -8024,34 +8175,25 @@ function ModuleEmployees({
       e.department.toLowerCase().includes(search.toLowerCase()),
   );
 
-  return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div className="relative flex-1 min-w-[240px]">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search by Employee ID (EMP001), Name (Rahul), or Department..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-300 text-xs focus:border-blue-600 focus:outline-none"
-          />
-        </div>
-        <button
-          onClick={openAdd}
-          className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-2 shadow-xs"
-        >
-          <Plus className="w-4 h-4" /> Add Employee / Partner
-        </button>
-      </div>
+  const employeeRows = filtered.filter((e) => e.type !== "Partner");
+  const partnerRows = filtered.filter((e) => e.type === "Partner");
 
+  const renderTable = (list, kind) => (
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-white">
+          <h3 className="text-sm font-extrabold text-slate-900">
+            {kind === "Partner" ? "Partners" : "Employees"}
+          </h3>
+          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+            {list.length}
+          </span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
-                <th className="whitespace-nowrap py-3.5 px-3">Employee ID</th>
-                <th className="whitespace-nowrap py-3.5 px-3">Employee Name</th>
+                <th className="whitespace-nowrap py-3.5 px-3">{kind} ID</th>
+                <th className="whitespace-nowrap py-3.5 px-3">{kind} Name</th>
                 <th className="whitespace-nowrap py-3.5 px-3">Email & Phone</th>
                 <th className="whitespace-nowrap py-3.5 px-3">
                   Department / Branch
@@ -8070,7 +8212,14 @@ function ModuleEmployees({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((emp) => (
+              {list.length === 0 && (
+                <tr>
+                  <td colSpan={11} className="py-6 px-3 text-center text-slate-400">
+                    No {kind.toLowerCase()}s found.
+                  </td>
+                </tr>
+              )}
+              {list.map((emp) => (
                 <tr key={emp.id} className="hover:bg-slate-50/90">
                   <td className="whitespace-nowrap py-3.5 px-3 font-bold text-blue-600">
                     {emp.id}
@@ -8168,6 +8317,44 @@ function ModuleEmployees({
           </table>
         </div>
       </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
+        <div className="relative flex-1 min-w-[240px]">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Search by Employee ID (EMP001), Name (Rahul), or Department..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-300 text-xs focus:border-blue-600 focus:outline-none"
+          />
+        </div>
+        {!isPartner && (
+        <div className="flex items-center gap-2">
+          <button
+            data-allow="user"
+            onClick={() => openAdd("Employee")}
+            className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-2 shadow-xs"
+          >
+            <Plus className="w-4 h-4" /> Add Employee
+          </button>
+          <button
+            data-allow="user"
+            onClick={() => openAdd("Partner")}
+            className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold flex items-center gap-2 shadow-xs"
+          >
+            <Plus className="w-4 h-4" /> Add Partner
+          </button>
+        </div>
+        )}
+      </div>
+
+      {renderTable(employeeRows, "Employee")}
+
+      {renderTable(partnerRows, "Partner")}
 
       {/* Profile Modal */}
       {selectedEmp && (
@@ -8289,24 +8476,42 @@ function ModuleEmployees({
       {modalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
           <form
+            data-allow="user"
             onSubmit={handleSave}
             className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-900">
                 {editingEmp
-                  ? `Edit Employee (${editingEmp})`
-                  : "Add Employee or Partner"}
+                  ? `Edit ${form.type || "Employee"} (${editingEmp})`
+                  : `Add ${form.type || "Employee"}`}
               </h3>
               <button type="button" onClick={() => setModalOpen(false)}>
                 <X className="w-5 h-5 text-slate-500" />
               </button>
             </div>
 
+            {!editingEmp && (
+              <div className="flex gap-2 p-1 rounded-xl bg-slate-100 text-xs font-bold">
+                {["Employee", "Partner"].map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() =>
+                      setForm({ ...form, type: t, id: nextRecordId(t) })
+                    }
+                    className={`flex-1 py-2 rounded-lg transition ${form.type === t ? "bg-white shadow text-blue-700" : "text-slate-500 hover:text-slate-800"}`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">
-                  Employee ID
+                  {form.type || "Employee"} ID
                 </label>
                 <input
                   required
@@ -8317,7 +8522,7 @@ function ModuleEmployees({
               </div>
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">
-                  Employee / Partner Name *
+                  {form.type || "Employee"} Name *
                 </label>
                 <input
                   required
@@ -8480,13 +8685,14 @@ function ModuleEmployees({
 // ============================================================================
 // MODULE 3: COMMISSION POLICIES (ALL 7 MODELS + SIMULATOR + VERSIONS)
 // ============================================================================
-function ModulePolicies({ policies, setPolicies, notify }) {
+function ModulePolicies({ policies, setPolicies, canManage = true, notify }) {
   const [selectedPolicy, setSelectedPolicy] = useState(policies[0]);
   const [simSales, setSimSales] = useState(400000);
   const [simCount, setSimCount] = useState(10);
   const [simProduct, setSimProduct] = useState("Product A");
   const [versionModalPolicy, setVersionModalPolicy] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingPolicyId, setEditingPolicyId] = useState(null);
 
   const [newPolicy, setNewPolicy] = useState({
     name: "",
@@ -8529,11 +8735,94 @@ function ModulePolicies({ policies, setPolicies, notify }) {
     G: "G. Multi-Level Commission",
   };
 
+  const defaultNewPolicy = {
+    name: "",
+    model: "A",
+    description: "",
+    rate: 5,
+    fixedAmount: 500,
+    tierMethod: "marginal",
+    slabs: [
+      { min: 0, max: 100000, rate: 2 },
+      { min: 100001, max: 300000, rate: 4 },
+      { min: 300001, max: 99999999, rate: 6 },
+    ],
+    targetAmount: 500000,
+    targetBonus: 10000,
+    productRates: [
+      { product: "Product A", rate: 3 },
+      { product: "Product B", rate: 5 },
+      { product: "Product C", rate: 8 },
+    ],
+    referralRate: 5,
+    multiLevelSplits: [
+      { role: "Sales Representative", share: 70 },
+      { role: "Sales Manager", share: 20 },
+      { role: "Referral Partner", share: 10 },
+    ],
+    eligibleGroup: "Sales Team",
+    effectiveFrom: "2026-11-01",
+    effectiveTo: "2027-03-31",
+    reversalRule: "Proportional reversal within 45 days of refund",
+  };
+
+  const openCreate = () => {
+    setEditingPolicyId(null);
+    setNewPolicy(JSON.parse(JSON.stringify(defaultNewPolicy)));
+    setCreateOpen(true);
+  };
+
+  const openEditPolicy = (pol) => {
+    setEditingPolicyId(pol.id);
+    setNewPolicy(JSON.parse(JSON.stringify({ ...defaultNewPolicy, ...pol })));
+    setCreateOpen(true);
+  };
+
+  const handleDeletePolicy = (pol) => {
+    if (!window.confirm(`Delete policy "${pol.name}" (${pol.id})? This cannot be undone.`)) return;
+    const remaining = policies.filter((p) => p.id !== pol.id);
+    setPolicies(remaining);
+    if (selectedPolicy?.id === pol.id) setSelectedPolicy(remaining[0]);
+    notify(`Policy "${pol.name}" deleted.`);
+  };
+
+  const nextPolicyId = () => {
+    const nums = policies.map((p) => parseInt(String(p.id).replace(/\D/g, ""), 10) || 0);
+    return `POL00${Math.max(0, ...nums) + 1}`;
+  };
+
   const handleCreatePolicy = (e) => {
     e.preventDefault();
+    if (editingPolicyId) {
+      const old = policies.find((p) => p.id === editingPolicyId);
+      const [maj, min] = String(old?.version || "v1.0").replace("v", "").split(".").map((n) => parseInt(n, 10) || 0);
+      const nextVersion = `v${maj}.${(min || 0) + 1}`;
+      const updated = {
+        ...old,
+        ...newPolicy,
+        id: editingPolicyId,
+        modelLabel: modelNames[newPolicy.model],
+        version: nextVersion,
+        versions: [
+          ...(old?.versions || []),
+          {
+            version: nextVersion,
+            date: new Date().toLocaleDateString("en-GB").replace(/\//g, "-"),
+            author: "Admin",
+            notes: `Edited policy (${modelNames[newPolicy.model]})`,
+          },
+        ],
+      };
+      setPolicies((prev) => prev.map((p) => (p.id === editingPolicyId ? updated : p)));
+      setSelectedPolicy(updated);
+      setCreateOpen(false);
+      setEditingPolicyId(null);
+      notify(`Policy "${updated.name}" updated to ${nextVersion}.`);
+      return;
+    }
     const created = {
       ...newPolicy,
-      id: `POL00${policies.length + 1}`,
+      id: nextPolicyId(),
       modelLabel: modelNames[newPolicy.model],
       status: "Active",
       version: "v1.0",
@@ -8683,7 +8972,7 @@ function ModulePolicies({ policies, setPolicies, notify }) {
           </p>
         </div>
         <button
-          onClick={() => setCreateOpen(true)}
+          onClick={openCreate}
           className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-2 shadow-sm"
         >
           <Plus className="w-4 h-4" /> Create Commission Policy
@@ -8890,16 +9179,44 @@ function ModulePolicies({ policies, setPolicies, notify }) {
               >
                 View Versions ({pol.versions?.length || 1})
               </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  togglePolicyActive(pol);
-                }}
-                className="px-3 py-1 rounded-lg border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-              >
-                {pol.status === "Active" ? "Deactivate" : "Activate"}
-              </button>
+              <div className="flex items-center gap-2">
+                {canManage && (
+                <button
+                  type="button"
+                  data-allow="user"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEditPolicy(pol);
+                  }}
+                  className="px-3 py-1 rounded-lg border border-amber-300 text-xs font-semibold text-amber-700 hover:bg-amber-50 flex items-center gap-1"
+                >
+                  <Edit3 className="w-3 h-3" /> Edit
+                </button>
+                )}
+                {canManage && (
+                <button
+                  type="button"
+                  data-allow="user"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeletePolicy(pol);
+                  }}
+                  className="px-3 py-1 rounded-lg border border-rose-300 text-xs font-semibold text-rose-700 hover:bg-rose-50 flex items-center gap-1"
+                >
+                  <Trash2 className="w-3 h-3" /> Delete
+                </button>
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    togglePolicyActive(pol);
+                  }}
+                  className="px-3 py-1 rounded-lg border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  {pol.status === "Active" ? "Deactivate" : "Activate"}
+                </button>
+              </div>
             </div>
           </div>
         ))}
@@ -8947,7 +9264,7 @@ function ModulePolicies({ policies, setPolicies, notify }) {
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-900">
-                Create New Commission Policy
+                {editingPolicyId ? `Edit Commission Policy (${editingPolicyId})` : "Create New Commission Policy"}
               </h3>
               <button type="button" onClick={() => setCreateOpen(false)}>
                 <X className="w-5 h-5 text-slate-500" />
@@ -9268,7 +9585,7 @@ function ModulePolicies({ policies, setPolicies, notify }) {
                 type="submit"
                 className="px-5 py-2 rounded-xl bg-blue-600 text-white font-bold"
               >
-                Save & Activate Policy
+                {editingPolicyId ? "Save Changes" : "Save & Activate Policy"}
               </button>
             </div>
           </form>
@@ -9296,7 +9613,7 @@ function ModuleTransactions({
   const [manual, setManual] = useState({
     invoiceNumber: `INV100${transactions.length + 1}`,
     customer: "",
-    product: "Product A",
+    product: "",
     date: "13-11-2026",
     invoiceAmount: 100000,
     discount: 5000,
@@ -9338,6 +9655,7 @@ function ModuleTransactions({
     const created = {
       id: `TXN00${transactions.length + 1}`,
       ...manual,
+      product: String(manual.product || "").trim(),
       invoiceAmount: Number(manual.invoiceAmount),
       discount: Number(manual.discount),
       eligibleBase,
@@ -9447,6 +9765,7 @@ function ModuleTransactions({
             All Transactions ({transactions.length})
           </button>
           <button
+            data-allow="user"
             onClick={() => setEntryMode("manual")}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition ${entryMode === "manual"
               ? "bg-blue-600 text-white"
@@ -9456,6 +9775,7 @@ function ModuleTransactions({
             1. Manual Entry Form
           </button>
           <button
+            data-allow="user"
             onClick={() => {
               setEntryMode("import");
               setImportType("CSV");
@@ -9468,6 +9788,7 @@ function ModuleTransactions({
             2. CSV Import Wizard
           </button>
           <button
+            data-allow="user"
             onClick={() => {
               setEntryMode("import");
               setImportType("Excel");
@@ -9499,6 +9820,7 @@ function ModuleTransactions({
 
       {entryMode === "manual" && (
         <form
+          data-allow="user"
           onSubmit={handleManualSubmit}
           className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4 text-xs"
         >
@@ -9537,17 +9859,16 @@ function ModuleTransactions({
               <label className="font-semibold text-slate-700 block mb-1">
                 Product
               </label>
-              <select
+              <input
+                required
+                type="text"
+                placeholder="Type product name, e.g., Product A"
                 value={manual.product}
                 onChange={(e) =>
                   setManual({ ...manual, product: e.target.value })
                 }
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white"
-              >
-                <option>Product A</option>
-                <option>Product B</option>
-                <option>Product C</option>
-              </select>
+                className="w-full rounded-xl border border-slate-300 px-3 py-2"
+              />
             </div>
             <div>
               <label className="font-semibold text-slate-700 block mb-1">
@@ -9645,7 +9966,10 @@ function ModuleTransactions({
       )}
 
       {entryMode === "import" && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5 text-xs">
+        <div
+          data-allow="user"
+          className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5 text-xs"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
             <h3 className="text-base font-bold text-slate-900">
               {importType} Bulk Sales Import Pipeline (7-Step Verification)
@@ -9907,25 +10231,42 @@ function ModuleCalculator({
   setCalcRuns,
   engine,
   setEngine,
+  isPartner = false,
+  canCalculate = true,
   notify,
 }) {
   const [period, setPeriod] = useState("November 2026");
   const [targetScope, setTargetScope] = useState("ALL");
   const [running, setRunning] = useState(false);
+  const [resultPopup, setResultPopup] = useState(null);
   const results = engine.results;
   const exceptions = engine.exceptions;
 
   // the calculation runs on the server (POST /api/engine/run) using the policies stored in PostgreSQL
   const runCalculation = async () => {
     setRunning(true);
+    // popup opens immediately (processing), then flips to success / failed like a payment screen
+    setResultPopup({ phase: "processing" });
+    const minWait = new Promise((r) => setTimeout(r, 1400));
     try {
-      const out = await api.post("/engine/run", { period, scope: targetScope });
+      const [out] = await Promise.all([
+        api.post("/engine/run", { period, scope: targetScope }),
+        minWait,
+      ]);
       setEngine({ results: out.results, exceptions: out.exceptions });
       setCalcRuns((prev) => [out.run, ...prev]);
+      setResultPopup({
+        phase: "success",
+        run: out.run,
+        results: out.results,
+        exceptions: out.exceptions,
+      });
       notify(
         `Commission calculation completed! Total Calculated: ${formatINR(out.run.totalCommission)}.`,
       );
     } catch (err) {
+      await minWait;
+      setResultPopup({ phase: "failed", error: err.message || "Calculation failed" });
       notify(err.message, "error");
     }
     setRunning(false);
@@ -9952,6 +10293,220 @@ function ModuleCalculator({
 
   return (
     <div className="space-y-6">
+      {/* CALCULATION RESULT POPUP (PhonePe-style: processing -> success / failed) */}
+      {resultPopup && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4"
+          style={{ animation: "cpFade .2s ease-out" }}
+          onClick={() => resultPopup.phase !== "processing" && setResultPopup(null)}
+        >
+          <style>{`
+            @keyframes cpFade { from { opacity: 0 } to { opacity: 1 } }
+            @keyframes cpPop { 0% { opacity: 0; transform: scale(.8) translateY(30px) } 70% { transform: scale(1.03) } 100% { opacity: 1; transform: scale(1) } }
+            @keyframes cpSpin { to { transform: rotate(360deg) } }
+            @keyframes cpDraw { to { stroke-dashoffset: 0 } }
+            @keyframes cpBounce { 0% { transform: scale(0) } 60% { transform: scale(1.18) } 100% { transform: scale(1) } }
+            @keyframes cpRipple { 0% { transform: scale(.6); opacity: .7 } 100% { transform: scale(2.2); opacity: 0 } }
+            @keyframes cpUp { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: translateY(0) } }
+            @keyframes cpShake { 0%,100% { transform: translateX(0) } 25% { transform: translateX(-6px) } 75% { transform: translateX(6px) } }
+          `}</style>
+
+          {resultPopup.phase === "processing" && (
+            <div
+              className="bg-white rounded-3xl max-w-xs w-full shadow-2xl border border-slate-200 p-8 text-center"
+              style={{ animation: "cpPop .35s ease-out" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                className="mx-auto w-16 h-16 rounded-full border-4 border-slate-200 border-t-blue-600"
+                style={{ animation: "cpSpin .8s linear infinite" }}
+              />
+              <h3 className="mt-5 text-base font-extrabold text-slate-900">
+                Calculating commission…
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Please wait, do not close this window.
+              </p>
+            </div>
+          )}
+
+          {resultPopup.phase === "failed" && (
+            <div
+              className="bg-white rounded-3xl max-w-sm w-full shadow-2xl border border-slate-200 overflow-hidden"
+              style={{ animation: "cpPop .45s ease-out" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-gradient-to-b from-rose-500 to-rose-600 text-white px-6 py-8 text-center">
+                <div
+                  className="mx-auto w-16 h-16 rounded-full bg-white flex items-center justify-center shadow-lg"
+                  style={{ animation: "cpBounce .5s ease-out both, cpShake .5s .5s" }}
+                >
+                  <X className="w-9 h-9 text-rose-600" />
+                </div>
+                <h3 className="mt-3 text-lg font-extrabold">Calculation Failed</h3>
+                <p className="text-xs text-rose-50 mt-1">{resultPopup.error}</p>
+              </div>
+              <div className="p-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setResultPopup(null)}
+                  className="px-5 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={runCalculation}
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          )}
+
+          {resultPopup.phase === "success" && (
+            <div
+              className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col"
+              style={{ animation: "cpPop .5s cubic-bezier(.2,.9,.3,1.2)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-gradient-to-b from-emerald-500 to-emerald-600 text-white px-6 pt-8 pb-6 text-center relative overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setResultPopup(null)}
+                  className="absolute right-4 top-4 p-1.5 rounded-lg hover:bg-white/20 z-10"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <div className="relative mx-auto w-20 h-20">
+                  <span
+                    className="absolute inset-0 rounded-full bg-white/40"
+                    style={{ animation: "cpRipple 1.4s ease-out .3s 2" }}
+                  />
+                  <span
+                    className="absolute inset-0 rounded-full bg-white/30"
+                    style={{ animation: "cpRipple 1.4s ease-out .6s 2" }}
+                  />
+                  <div
+                    className="relative w-20 h-20 rounded-full bg-white flex items-center justify-center shadow-lg"
+                    style={{ animation: "cpBounce .55s ease-out both" }}
+                  >
+                    <svg viewBox="0 0 52 52" className="w-12 h-12" fill="none">
+                      <circle
+                        cx="26" cy="26" r="23" stroke="#059669" strokeWidth="3"
+                        strokeDasharray="145" strokeDashoffset="145"
+                        style={{ animation: "cpDraw .6s ease-out .15s forwards" }}
+                      />
+                      <path
+                        d="M15 27l8 8 15-17" stroke="#059669" strokeWidth="4"
+                        strokeLinecap="round" strokeLinejoin="round"
+                        strokeDasharray="40" strokeDashoffset="40"
+                        style={{ animation: "cpDraw .4s ease-out .6s forwards" }}
+                      />
+                    </svg>
+                  </div>
+                </div>
+                <h3
+                  className="mt-4 text-lg font-extrabold"
+                  style={{ animation: "cpUp .4s ease-out .7s both" }}
+                >
+                  Commission Calculated Successfully
+                </h3>
+                <div
+                  className="text-3xl font-extrabold mt-1"
+                  style={{ animation: "cpUp .4s ease-out .85s both" }}
+                >
+                  {formatINR(resultPopup.run.totalCommission)}
+                </div>
+                <div
+                  className="text-[11px] text-emerald-50 mt-1"
+                  style={{ animation: "cpUp .4s ease-out 1s both" }}
+                >
+                  {resultPopup.run.timestamp}
+                </div>
+              </div>
+
+              <div
+                className="p-5 space-y-4 overflow-y-auto text-xs"
+                style={{ animation: "cpUp .45s ease-out 1s both" }}
+              >
+                <div className="rounded-2xl border border-slate-200 divide-y divide-slate-100">
+                  {[
+                    ["Run ID", resultPopup.run.runId],
+                    ["Period", resultPopup.run.period],
+                    ["Scope", resultPopup.run.scope],
+                    ["People Calculated", resultPopup.results.length],
+                    ["Total Eligible Sales", formatINR(resultPopup.run.totalSales)],
+                    ["Total Commission", formatINR(resultPopup.run.totalCommission)],
+                    ["Exceptions", resultPopup.exceptions.length],
+                    ["Status", resultPopup.run.status],
+                  ].map(([k, v]) => (
+                    <div key={k} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                      <span className="text-slate-500">{k}</span>
+                      <span className="font-bold text-slate-900 text-right">{v}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {resultPopup.results.length > 0 && (
+                  <div>
+                    <h4 className="text-[11px] font-bold uppercase text-slate-500 mb-2">
+                      Commission per person
+                    </h4>
+                    <div className="space-y-2">
+                      {resultPopup.results.map((r) => (
+                        <div
+                          key={r.employeeId}
+                          className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 border border-slate-200 px-3 py-2.5"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 truncate">
+                              {r.employeeName}{" "}
+                              <span className="font-normal text-slate-400">({r.employeeId})</span>
+                            </div>
+                            <div className="text-[11px] text-slate-500 truncate">
+                              {r.policyName} • {r.txnCount} txns • Sales {formatINR(r.eligibleSales)}
+                            </div>
+                          </div>
+                          <div className="font-extrabold text-emerald-700 whitespace-nowrap">
+                            {formatINR(r.calculatedCommission)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {resultPopup.exceptions.length > 0 && (
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-amber-800">
+                    <div className="font-bold mb-1">
+                      {resultPopup.exceptions.length} exception(s) excluded from the run
+                    </div>
+                    {resultPopup.exceptions.map((ex) => (
+                      <div key={ex.id}>
+                        • <strong>{ex.txnId}</strong> ({ex.employee}): {ex.issue}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="px-5 py-4 border-t border-slate-100 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setResultPopup(null)}
+                  className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* BLOCK 1: RUN SETUP */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
         <BlockHeader
@@ -9998,18 +10553,25 @@ function ModuleCalculator({
           </div>
 
           <div className="flex flex-wrap gap-2.5">
+            {canCalculate && (
             <button
+              data-allow="user"
               onClick={runCalculation}
-              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-2 shadow-sm"
+              disabled={running}
+              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-bold flex items-center gap-2 shadow-sm"
             >
-              <Calculator className="w-4 h-4" /> Calculate Commission
+              <Calculator className="w-4 h-4" />{" "}
+              {running ? "Calculating..." : "Calculate Commission"}
             </button>
+            )}
+            {canCalculate && (
             <button
               onClick={runCalculation}
               className="px-4 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-2"
             >
               <RefreshCw className="w-4 h-4" /> Request Recalculation
             </button>
+            )}
           </div>
         </div>
       </div>
@@ -10147,8 +10709,8 @@ function ModuleCalculator({
         </div>
       )}
 
-      {/* BLOCK 4: RESULTS — ONE BLOCK PER PERSON */}
-      {results.length > 0 && (
+      {/* BLOCK 4: RESULTS — ONE BLOCK PER PERSON (hidden for partners) */}
+      {!isPartner && results.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
           <BlockHeader
             num="4"
@@ -10375,8 +10937,6 @@ function ModuleReversals({
   transactions,
   reversals,
   setReversals,
-  adjustments,
-  setAdjustments,
   notify,
 }) {
   const [revForm, setRevForm] = useState({
@@ -10384,14 +10944,6 @@ function ModuleReversals({
     type: "Partial Refund",
     originalCommission: 5000,
     refundAmount: 20000,
-    reason: "",
-  });
-
-  const [adjForm, setAdjForm] = useState({
-    employee: "Rahul",
-    statementId: "STMT001",
-    type: "Manual Credit",
-    amount: 500,
     reason: "",
   });
 
@@ -10437,28 +10989,6 @@ function ModuleReversals({
     );
   };
 
-  const handleRequestAdjustment = (e) => {
-    e.preventDefault();
-    const item = {
-      id: `ADJ00${adjustments.length + 1}`,
-      ...adjForm,
-      amount: Number(adjForm.amount),
-      requestedBy: "Suresh",
-      date: "13-11-2026",
-      status: "Pending Finance Approval",
-    };
-    setAdjustments((prev) => [item, ...prev]);
-    setAdjForm({ ...adjForm, reason: "" });
-    notify(`Manual adjustment ${item.id} submitted for Finance approval.`);
-  };
-
-  const approveAdjustment = (id, status) => {
-    setAdjustments((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, status } : a)),
-    );
-    notify(`Adjustment ${id} marked as ${status}.`);
-  };
-
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
@@ -10494,8 +11024,9 @@ function ModuleReversals({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         <form
+          data-allow="employee user"
           onSubmit={handleRecordReversal}
           className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4 text-xs"
         >
@@ -10605,94 +11136,6 @@ function ModuleReversals({
           </button>
         </form>
 
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4 text-xs">
-          <h3 className="text-base font-bold text-slate-900">
-            Request & Approve Manual Adjustments
-          </h3>
-          <form onSubmit={handleRequestAdjustment} className="space-y-3">
-            <div className="grid grid-cols-3 gap-2">
-              <input
-                value={adjForm.employee}
-                onChange={(e) =>
-                  setAdjForm({ ...adjForm, employee: e.target.value })
-                }
-                placeholder="Employee"
-                className="rounded-xl border border-slate-300 px-3 py-2"
-              />
-              <input
-                value={adjForm.statementId}
-                onChange={(e) =>
-                  setAdjForm({ ...adjForm, statementId: e.target.value })
-                }
-                placeholder="Statement ID"
-                className="rounded-xl border border-slate-300 px-3 py-2"
-              />
-              <input
-                type="number"
-                value={adjForm.amount}
-                onChange={(e) =>
-                  setAdjForm({ ...adjForm, amount: Number(e.target.value) })
-                }
-                placeholder="Amount (₹)"
-                className="rounded-xl border border-slate-300 px-3 py-2"
-              />
-            </div>
-            <div className="flex gap-2">
-              <input
-                required
-                value={adjForm.reason}
-                onChange={(e) =>
-                  setAdjForm({ ...adjForm, reason: e.target.value })
-                }
-                placeholder="Justification for manual adjustment..."
-                className="flex-1 rounded-xl border border-slate-300 px-3 py-2"
-              />
-              <button
-                type="submit"
-                className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold"
-              >
-                Request
-              </button>
-            </div>
-          </form>
-
-          <div className="divide-y divide-slate-100 pt-2">
-            {adjustments.map((adj) => (
-              <div
-                key={adj.id}
-                className="py-2.5 flex items-center justify-between gap-2"
-              >
-                <div>
-                  <div className="font-bold text-slate-900">
-                    {adj.id} • {adj.employee} ({adj.statementId}) —{" "}
-                    {formatINR(adj.amount)}
-                  </div>
-                  <div className="text-slate-500">{adj.reason}</div>
-                </div>
-                {adj.status === "Pending Finance Approval" ? (
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() => approveAdjustment(adj.id, "Approved")}
-                      className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => approveAdjustment(adj.id, "Rejected")}
-                      className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-700 font-bold"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                ) : (
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold">
-                    {adj.status}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
@@ -12364,6 +12807,17 @@ function ModuleDisputes({
   });
   const [activeDispute, setActiveDispute] = useState(disputes[0]);
   const [note, setNote] = useState("");
+  const [tileFilter, setTileFilter] = useState("all"); // all | open | closed
+
+  const OPEN_STAGES = ["Open", "Under Review", "Awaiting Information"];
+  const CLOSED_STAGES = ["Resolved", "Closed"];
+  const visibleDisputes = disputes.filter((d) =>
+    tileFilter === "open"
+      ? OPEN_STAGES.includes(d.status)
+      : tileFilter === "closed"
+        ? CLOSED_STAGES.includes(d.status)
+        : true,
+  );
 
   const workflowStages = [
     "Open",
@@ -12480,6 +12934,7 @@ function ModuleDisputes({
             label: "Total Disputes",
             value: disputes.length,
             cls: "from-slate-800 to-slate-700",
+            filter: "all",
           },
           {
             label: "Open / In Review",
@@ -12489,6 +12944,7 @@ function ModuleDisputes({
               ),
             ).length,
             cls: "from-amber-500 to-orange-500",
+            filter: "open",
           },
           {
             label: "Resolved / Closed",
@@ -12496,16 +12952,46 @@ function ModuleDisputes({
               ["Resolved", "Closed"].includes(d.status),
             ).length,
             cls: "from-emerald-600 to-teal-600",
+            filter: "closed",
           },
           {
             label: "Adjustments Created",
             value: adjustments.length,
             cls: "from-blue-600 to-indigo-600",
+            filter: "adjustments",
           },
         ].map((k) => (
           <div
             key={k.label}
-            className="rounded-2xl bg-white border border-slate-200 p-4 flex items-center gap-3 shadow-xs"
+            role="button"
+            tabIndex={0}
+            data-allow="all"
+            title={
+              k.filter === "adjustments"
+                ? "Go to Adjustments register"
+                : "Click to filter the disputes list"
+            }
+            onClick={() => {
+              if (k.filter === "adjustments") {
+                scrollToId("adjustments-register");
+                return;
+              }
+              setTileFilter(k.filter);
+              const first = disputes.find((d) =>
+                k.filter === "open"
+                  ? OPEN_STAGES.includes(d.status)
+                  : k.filter === "closed"
+                    ? CLOSED_STAGES.includes(d.status)
+                    : true,
+              );
+              if (first) setActiveDispute(first);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.click();
+            }}
+            className={`rounded-2xl bg-white border p-4 flex items-center gap-3 shadow-xs cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition ${
+              k.filter === tileFilter ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200"
+            }`}
           >
             <div
               className={`w-11 h-11 rounded-xl bg-gradient-to-br ${k.cls} text-white font-extrabold text-lg flex items-center justify-center`}
@@ -12519,7 +13005,8 @@ function ModuleDisputes({
         ))}
       </div>
 
-      {(accessLevel === "admin" || isEmployee || accessLevel === "user") && (
+      {/* admin only reviews & resolves disputes; employees / users raise them */}
+      {(isEmployee || accessLevel === "user") && (
         <form
           data-allow="employee user"
           onSubmit={handleSubmitDispute}
@@ -12642,7 +13129,14 @@ function ModuleDisputes({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {disputes.map((d) => (
+                {visibleDisputes.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-8 px-3 text-center text-slate-400">
+                      No disputes in this category.
+                    </td>
+                  </tr>
+                )}
+                {visibleDisputes.map((d) => (
                   <tr
                     key={d.id}
                     onClick={() => setActiveDispute(d)}
