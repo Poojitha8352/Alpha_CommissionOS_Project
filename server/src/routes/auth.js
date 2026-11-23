@@ -127,14 +127,32 @@ async function verifyGoogleProfile(body) {
   throw httpError(501, 'Google sign-in is not configured on the server (set GOOGLE_CLIENT_ID).');
 }
 
+// Who may become an admin with Google sign-in:
+//   ADMIN_GOOGLE_EMAILS  = comma separated list of e-mails        (a@x.com,b@y.com)
+//   ADMIN_GOOGLE_DOMAINS = comma separated company domains, e.g.  alphaauron.com  (every verified Google/Workspace account of that domain)
+// Public mail domains (gmail.com ...) are ignored for the domain rule, because anybody can own such an address.
+const PUBLIC_MAIL_DOMAINS = new Set(['gmail.com', 'googlemail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'live.com', 'icloud.com', 'proton.me', 'protonmail.com']);
+const csv = (v) => String(v || '').split(',').map((x) => x.trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
+function isAllowedAdminEmail(email) {
+  const e = String(email || '').toLowerCase();
+  if ((config.adminGoogleEmails || []).map((x) => String(x).toLowerCase()).includes(e)) return true;
+  if (csv(process.env.ADMIN_GOOGLE_EMAILS).includes(e)) return true;
+  const domain = e.split('@')[1];
+  return !!domain && !PUBLIC_MAIL_DOMAINS.has(domain) && csv(process.env.ADMIN_GOOGLE_DOMAINS).includes(domain);
+}
+
 router.post('/google', wrap(async (req, res) => {
   const portal = portalSchema.parse(req.body.portal);
   const profile = await verifyGoogleProfile(req.body);
   let account = await prisma.account.findUnique({ where: { email: profile.email } });
+  if (account && portal === 'admin' && account.role !== 'admin' && account.status === 'Active' && isAllowedAdminEmail(profile.email)) {
+    // an existing account whose Google e-mail is on the admin list becomes an admin
+    account = await prisma.account.update({ where: { id: account.id }, data: { role: 'admin', tokenVersion: account.tokenVersion + 1 } });
+  }
   if (account) {
     account = await assertPortal(account, portal);
   } else {
-    if (portal === 'admin' && !config.adminGoogleEmails.includes(profile.email)) {
+    if (portal === 'admin' && !isAllowedAdminEmail(profile.email)) {
       throw httpError(403, 'This Google account is not an authorised admin.');
     }
     const rec = await employeeRecordFor(profile.email);
