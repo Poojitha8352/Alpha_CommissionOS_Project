@@ -1,12 +1,9 @@
-// Quick SMTP check:  node test-mail.js   (run inside the server folder)
-require('dotenv').config();
-const nodemailer = require('nodemailer');
+// Send a real test mail:  node test-mail.js            (to SMTP_USER)
+//                         node test-mail.js you@x.com  (to any address)
 const config = require('./src/config');
-const port = Number(config.smtp.port) || 587;
-const t = nodemailer.createTransport({
-  host: config.smtp.host, port, secure: port === 465, requireTLS: port !== 465, family: 4,
-  tls: { servername: config.smtp.host }, connectionTimeout: 20000,
-  auth: { user: config.smtp.user, pass: String(config.smtp.pass || '').replace(/\s+/g, '') },
-});
-console.log(`Checking ${config.smtp.host}:${port} as ${config.smtp.user} ...`);
-t.verify().then(() => console.log('SMTP OK - mail can be sent.')).catch((e) => console.log('SMTP FAILED:', e.code || '', e.message));
+const { sendMail, mailError } = require('./src/lib/mailer');
+const to = process.argv[2] || config.smtp.user;
+console.log('Mode: ' + (process.env.BREVO_API_KEY ? 'Brevo HTTPS API (port 443)' : 'SMTP ' + config.smtp.host + ':' + config.smtp.port));
+console.log('Sending test mail to ' + to + ' ...');
+sendMail({ to, subject: 'CommissionOS test mail', text: 'If you can read this, e-mail sending works.' })
+  .then((ok) => console.log(ok ? 'MAIL SENT - check the inbox (and spam).' : 'FAILED: ' + mailError()));
