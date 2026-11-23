@@ -1,7 +1,8 @@
 // Which records each kind of sign-in may SEE (enforced on the server, the screen only shows what it is given).
 //   admin    -> everything
 //   employee -> only their OWN records (profile, sales, refunds, statements, payouts, disputes, adjustments) + all commission plans
-//   user     -> everything the admin sees (read-only), except other people's subscription invoices
+//   user     -> (shown as "Partner") ONLY their OWN records, same as an employee; the one exception is Module 2
+//               (Employees & Partners directory) which still lists everyone
 const { employeeOf } = require('./permissions');
 
 const lc = (v) => String(v || '').trim().toLowerCase();
@@ -42,18 +43,13 @@ function auditHistory(data) {
 async function scopeData(account, data) {
   if (account.role === 'admin') return data;
 
-  if (account.role === 'user') {
-    // users see everything the admin sees (only their own subscription invoices, for privacy)
-    const out = { ...data };
-    if (data.billingInvoices) out.billingInvoices = data.billingInvoices.filter((i) => i.accountId === account.id);
-    return out;
-  }
-
   // employee
   const me = await employeeOf(account);
   const mine = (name) => me && lc(name) === lc(me.name);
+  const isPartner = account.role === 'user';
   const out = { ...data };
-  if (data.employees) out.employees = me ? data.employees.filter((e) => e.id === me.id) : [];
+  // Module 2 (Employees & Partners directory): partners keep the full directory, employees see only themselves
+  if (data.employees) out.employees = isPartner ? data.employees : (me ? data.employees.filter((e) => e.id === me.id) : []);
   // every commission plan is visible so employees can see how each plan pays (policies are not personal data)
   if (data.transactions) out.transactions = me ? data.transactions.filter((t) => t.salespersonId === me.id || mine(t.salesperson) || mine(t.referrer)) : [];
   if (data.reversals) out.reversals = data.reversals.filter((r) => mine(r.employee));
@@ -61,7 +57,7 @@ async function scopeData(account, data) {
   if (data.statements) out.statements = me ? data.statements.filter((s) => s.employeeId === me.id || mine(s.employee)) : [];
   if (data.payouts) out.payouts = data.payouts.filter((p) => mine(p.employee));
   if (data.disputes) out.disputes = data.disputes.filter((d) => mine(d.employee));
-  if (data.departments) out.departments = me ? data.departments.filter((d) => lc(d.name) === lc(me.department)) : [];
+  if (data.departments) out.departments = isPartner ? data.departments : (me ? data.departments.filter((d) => lc(d.name) === lc(me.department)) : []);
   ['users', 'rolePermissions', 'billingInvoices', 'calcRuns'].forEach((k) => { if (k in data) out[k] = []; });
   if (data.engine) {
     out.engine = {

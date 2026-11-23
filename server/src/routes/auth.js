@@ -21,7 +21,14 @@ const credentials = z.object({
 const employeeRecordFor = async (email) =>
   prisma.employee.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
 
-// admin -> #admin, employee -> #employee, user -> the normal login page.
+// who is on the Employees & Partners list decides which portal they use:
+//   type "Employee" -> Employee portal (#employee),  type "Partner" -> Partner portal (no #)
+const isPartnerRec = (rec) => !!rec && String(rec.type || '').trim().toLowerCase() === 'partner';
+const isEmployeeRec = (rec) => !!rec && !isPartnerRec(rec);
+const MSG_USE_EMPLOYEE = 'This e-mail is on the employee list. Please sign in from the Employee portal (#employee).';
+const MSG_USE_PARTNER = 'This is a partner account. Please sign in from the Partner login page (open the site without #).';
+
+// admin -> #admin, employee -> #employee, partner -> the normal login page.
 // Returns the (possibly upgraded) account.
 async function assertPortal(account, portal) {
   if (account.status !== 'Active') throw httpError(403, 'This account is suspended. Please contact your administrator.');
@@ -29,15 +36,24 @@ async function assertPortal(account, portal) {
   if (portal !== 'admin' && account.role === 'admin') {
     throw httpError(403, 'Admin accounts must sign in from the Admin portal (#admin).');
   }
-  // an older "user" account whose e-mail is on the employee list becomes an employee when it uses the employee portal
-  if (portal === 'employee' && account.role === 'user' && (await employeeRecordFor(account.email))) {
-    return prisma.account.update({ where: { id: account.id }, data: { role: 'employee', tokenVersion: account.tokenVersion + 1 } });
+  const rec = await employeeRecordFor(account.email);
+  if (portal === 'employee') {
+    if (isPartnerRec(rec)) throw httpError(403, MSG_USE_PARTNER);
+    // an older "user" account whose e-mail is on the employee list becomes an employee when it uses the employee portal
+    if (account.role === 'user' && rec) {
+      return prisma.account.update({ where: { id: account.id }, data: { role: 'employee', tokenVersion: account.tokenVersion + 1 } });
+    }
+    if (account.role !== 'employee') {
+      throw httpError(403, 'This is not an employee account. Please sign in from the Partner login page.');
+    }
   }
-  if (portal === 'employee' && account.role !== 'employee') {
-    throw httpError(403, 'This is not an employee account. Please sign in from the normal login page.');
-  }
-  if (portal === 'user' && account.role === 'employee') {
-    throw httpError(403, 'This is an employee account. Please sign in from the Employee portal (#employee).');
+  if (portal === 'user') {
+    // listed as a Partner but holding an employee role -> becomes a partner (user role)
+    if (account.role === 'employee' && isPartnerRec(rec)) {
+      return prisma.account.update({ where: { id: account.id }, data: { role: 'user', tokenVersion: account.tokenVersion + 1 } });
+    }
+    if (account.role === 'employee') throw httpError(403, MSG_USE_EMPLOYEE);
+    if (isEmployeeRec(rec)) throw httpError(403, MSG_USE_EMPLOYEE);
   }
   return account;
 }
@@ -57,10 +73,13 @@ router.post('/register', wrap(async (req, res) => {
   if (body.portal === 'admin') throw httpError(403, 'Admin accounts cannot be self-registered.');
   const existing = await prisma.account.findUnique({ where: { email: body.email } });
   if (existing) throw httpError(409, 'An account with this email already exists. Please sign in.');
-  // employees can only join with the e-mail the admin added to Employees & Partners
-  if (body.portal === 'employee' && !(await employeeRecordFor(body.email))) {
-    throw httpError(403, 'This e-mail is not on the employee list. Ask your admin to add you in Employees & Partners first.');
+  // employees can only join with the e-mail the admin added to Employees & Partners (as type Employee)
+  const rec = await employeeRecordFor(body.email);
+  if (body.portal === 'employee') {
+    if (!rec) throw httpError(403, 'This e-mail is not on the employee list. Ask your admin to add you in Employees & Partners first.');
+    if (isPartnerRec(rec)) throw httpError(403, MSG_USE_PARTNER);
   }
+  if (body.portal === 'user' && isEmployeeRec(rec)) throw httpError(403, MSG_USE_EMPLOYEE);
   const account = await prisma.account.create({
     data: {
       name: body.name,
@@ -118,9 +137,12 @@ router.post('/google', wrap(async (req, res) => {
     if (portal === 'admin' && !config.adminGoogleEmails.includes(profile.email)) {
       throw httpError(403, 'This Google account is not an authorised admin.');
     }
-    if (portal === 'employee' && !(await employeeRecordFor(profile.email))) {
-      throw httpError(403, 'This e-mail is not on the employee list. Ask your admin to add you in Employees & Partners first.');
+    const rec = await employeeRecordFor(profile.email);
+    if (portal === 'employee') {
+      if (!rec) throw httpError(403, 'This e-mail is not on the employee list. Ask your admin to add you in Employees & Partners first.');
+      if (isPartnerRec(rec)) throw httpError(403, MSG_USE_PARTNER);
     }
+    if (portal === 'user' && isEmployeeRec(rec)) throw httpError(403, MSG_USE_EMPLOYEE);
     account = await prisma.account.create({
       data: { name: profile.name, email: profile.email, role: portal === 'admin' ? 'admin' : portal === 'employee' ? 'employee' : 'user', provider: 'Google' },
     });

@@ -212,8 +212,8 @@ const UI_PREFIX = "auron-commissionos:ui:";
 let ACCESS = "admin";
 const writeAllowed = (name) =>
   ACCESS === "admin" ||
-  (ACCESS === "employee" && (name === "disputes" || name === "statements")) ||
-  (ACCESS === "user" && name === "disputes");
+  (ACCESS === "employee" && (name === "disputes" || name === "statements" || name === "transactions")) ||
+  (ACCESS === "user" && (name === "disputes" || name === "transactions"));
 const blockedWrite = () => {
   window.dispatchEvent(new CustomEvent("view-only-blocked"));
 };
@@ -981,8 +981,8 @@ function LoginPage({ mode, authConfig, onSignIn, onRegister, onGoogle }) {
       icon: UserCheck,
     },
     user: {
-      title: "Welcome back",
-      sub: "Sign in to view everything in the workspace (view only).",
+      title: "Partner Portal",
+      sub: "Sign in to see your own sales, commissions, statements and payouts.",
       badge: "bg-blue-100 text-blue-700",
       icon: Users,
     },
@@ -1074,7 +1074,7 @@ function LoginPage({ mode, authConfig, onSignIn, onRegister, onGoogle }) {
                       ? "Admin"
                       : mode === "employee"
                         ? "Employee"
-                        : "User"}{" "}
+                        : "Partner"}{" "}
                     login
                   </span>
                   <h2 className="text-xl font-extrabold text-slate-900 mt-1">
@@ -3397,6 +3397,13 @@ export default function App() {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+  // only #admin and #employee are portal addresses; anything else (e.g. #partner) is the plain Partner address
+  useEffect(() => {
+    if (hash && hash !== "#admin" && hash !== "#employee") {
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+      setHash("");
+    }
+  }, [hash]);
   // opening animation (styles: "intro-*" in styles.css): plays on every fresh open, then moves on by itself
   const [introDone, setIntroDone] = useState(false);
   useEffect(() => {
@@ -4302,7 +4309,7 @@ return (
               statements={scoped.statements}
               reversals={scoped.reversals}
               adjustments={scoped.adjustments}
-              onlyMine={isPartner}
+              onlyMine={isPartner || isEmployee}
               setActiveModule={setActiveModule}
             />
           )}
@@ -4389,6 +4396,13 @@ return (
               setTransactions={setTransactions}
               employees={employees}
               departments={departments}
+              me={
+                isAdmin
+                  ? null
+                  : employees.find((e) => lcv2(e.email) === lcv2(session?.email)) ||
+                    employees.find((e) => lcv2(e.name) === lcv2(session?.name)) ||
+                    null
+              }
               notify={notify}
             />
           )}
@@ -5105,12 +5119,8 @@ function ModuleOrgSettings({
                 </label>
                 <div className="flex flex-wrap items-center gap-3">
                   {[
-                    "#0A0A0B",
-                    "#1E1B4B",
-                    "#064E3B",
-                    "#1E293B",
-                    "#311042",
-                    "#450A0A",
+                    "#0A0A0B", "#1F2937", "#1E3A8A", "#0369A1", "#0F766E",
+                    "#14532D", "#B45309", "#B91C1C", "#831843", "#4C1D95",
                   ].map((c) => (
                     <button
                       key={c}
@@ -5126,6 +5136,20 @@ function ModuleOrgSettings({
                       )}
                     </button>
                   ))}
+                  <label
+                    className="w-10 h-10 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer overflow-hidden relative"
+                    title="Pick any custom colour"
+                  >
+                    <span className="text-slate-500 text-lg font-bold">+</span>
+                    <input
+                      type="color"
+                      value={form.primaryColor || "#0A0A0B"}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, primaryColor: e.target.value }))
+                      }
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                    />
+                  </label>
                 </div>
               </div>
               {saveBar}
@@ -7519,7 +7543,7 @@ function ModuleDashboard({
   const myRow = employees[0] || {};
   const num = (v) => Number(v) || 0;
   const mineValues = {
-    "Total Eligible Sales": num(myRow.eligibleSales),
+    "Total Eligible Sales": transactions.reduce((t, x) => t + num(x.eligibleBase), 0), // same total as the details popup (own transactions)
     "Calculated Commission": num(myRow.earnedCommission),
     "Pending Commission": num(myRow.pendingCommission),
     "Approved Commission": num(myRow.approvedCommission),
@@ -9643,21 +9667,26 @@ function ModuleTransactions({
   employees,
   departments,
   notify,
+  me = null, // signed-in employee / partner record (null for admin)
 }) {
   const [entryMode, setEntryMode] = useState("table");
   const [statusFilter, setStatusFilter] = useState("All");
 
   const [manual, setManual] = useState({
-    invoiceNumber: `INV100${transactions.length + 1}`,
+    invoiceNumber: me
+      ? `INV${Date.now().toString().slice(-6)}`
+      : `INV100${transactions.length + 1}`,
     customer: "",
     product: "",
     date: "13-11-2026",
     invoiceAmount: 100000,
     discount: 5000,
-    salesperson: "Rahul",
-    department: "Sales",
-    status: "Validated",
+    salesperson: me ? me.name : "Rahul",
+    department: me ? me.department || "Sales" : "Sales",
+    // employees / partners enter sales as pending; an admin validates them
+    status: me ? "Pending Validation" : "Validated",
   });
+  const formEmployees = me ? [me] : employees;
 
   const [importType, setImportType] = useState("CSV");
   const [importStep, setImportStep] = useState(1);
@@ -9688,15 +9717,19 @@ function ModuleTransactions({
       0,
       Number(manual.invoiceAmount) - Number(manual.discount),
     );
-    const emp = employees.find((x) => x.name === manual.salesperson);
+    const emp = me || employees.find((x) => x.name === manual.salesperson);
     const created = {
-      id: `TXN00${transactions.length + 1}`,
+      // unique id (a scoped list is shorter than the real table, so a counter could clash)
+      id: me
+        ? `TXN${Date.now().toString(36).toUpperCase()}`
+        : `TXN00${transactions.length + 1}`,
       ...manual,
       product: String(manual.product || "").trim(),
       invoiceAmount: Number(manual.invoiceAmount),
       discount: Number(manual.discount),
       eligibleBase,
       salespersonId: emp?.id || "EMP001",
+      ...(me ? { salesperson: me.name, status: "Pending Validation" } : {}),
     };
     setTransactions((prev) => [created, ...prev]);
     setEntryMode("table");
@@ -9802,7 +9835,7 @@ function ModuleTransactions({
             All Transactions ({transactions.length})
           </button>
           <button
-            data-allow="user"
+            data-allow="employee user"
             onClick={() => setEntryMode("manual")}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition ${entryMode === "manual"
               ? "bg-blue-600 text-white"
@@ -9812,7 +9845,6 @@ function ModuleTransactions({
             1. Manual Entry Form
           </button>
           <button
-            data-allow="user"
             onClick={() => {
               setEntryMode("import");
               setImportType("CSV");
@@ -9825,7 +9857,6 @@ function ModuleTransactions({
             2. CSV Import Wizard
           </button>
           <button
-            data-allow="user"
             onClick={() => {
               setEntryMode("import");
               setImportType("Excel");
@@ -9857,7 +9888,7 @@ function ModuleTransactions({
 
       {entryMode === "manual" && (
         <form
-          data-allow="user"
+          data-allow="employee user"
           onSubmit={handleManualSubmit}
           className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4 text-xs"
         >
@@ -9957,7 +9988,7 @@ function ModuleTransactions({
                 }
                 className="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white"
               >
-                {employees.map((e) => (
+                {formEmployees.map((e) => (
                   <option key={e.id} value={e.name}>
                     {e.name} ({e.id})
                   </option>
@@ -10004,7 +10035,6 @@ function ModuleTransactions({
 
       {entryMode === "import" && (
         <div
-          data-allow="user"
           className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5 text-xs"
         >
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
@@ -10920,7 +10950,7 @@ function ModuleCalculator({
         <BlockHeader
           num="5"
           title="Calculation Run History"
-          subtitle="All previous calculation runs"
+          subtitle={canCalculate ? "All previous calculation runs" : "Your own calculations"}
         />
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -10936,7 +10966,18 @@ function ModuleCalculator({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {calcRuns.map((run) => (
+              {(canCalculate
+                ? calcRuns
+                : (results || []).map((r) => ({
+                  runId: r.employeeId,
+                  period,
+                  scope: r.policyName,
+                  timestamp: "-",
+                  totalSales: r.eligibleSales,
+                  totalCommission: r.calculatedCommission,
+                  status: "Calculated",
+                }))
+              ).map((run) => (
                 <tr key={run.runId}>
                   <td className="py-2.5 px-3 font-bold text-blue-600">
                     {run.runId}

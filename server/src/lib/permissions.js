@@ -2,7 +2,7 @@
 //   admin    -> everything
 //   employee -> sees only their own records, and may only (a) update the phone number on their OWN employee record,
 //               (b) raise disputes / add comments on their OWN disputes, (c) add comments on their OWN statements (approval workflow)
-//   user     -> sees everything; writes only: pay for a subscription, raise disputes and add notes to disputes (Module 11)
+//   user     -> (Partner) sees only their own records; writes only: raise disputes and add notes to their OWN disputes (Module 11)
 const prisma = require('../db');
 const { httpError } = require('./errors');
 const { COLLECTIONS, fromRow } = require('./collections');
@@ -16,14 +16,34 @@ async function employeeOf(account) {
   return byName.length === 1 ? fromRow(COLLECTIONS.employees, byName[0]) : null;
 }
 
+
+// Manual sales entry (Module 4): employees and partners may add a transaction and edit their OWN ones.
+// The server forces the owner to be the signed-in person and keeps the status under admin control.
+async function ownTransactionWrite({ me, method, existing, body }) {
+  if (method === 'POST') {
+    return { ...body, salesperson: me.name, salespersonId: me.id, status: 'Pending Validation' };
+  }
+  if (method === 'PUT') {
+    if (!existing || !(existing.salespersonId === me.id || lc(existing.salesperson) === lc(me.name))) {
+      throw httpError(403, 'You can only edit your own sales entries.');
+    }
+    return { ...body, id: existing.id, salesperson: existing.salesperson, salespersonId: existing.salespersonId, status: existing.status };
+  }
+  throw httpError(403, 'You cannot delete sales transactions.');
+}
+
 // Returns the body that may really be written (possibly reduced), or throws 403.
 async function authoriseWrite({ account, name, method, id, body, existing }) {
   if (account.role === 'admin') return body;
   if (account.role === 'user') {
-    // users are view-only, except Module 11 (Disputes & Adjustments): they may raise disputes and add notes
-    if (name === 'disputes' && method === 'POST') return { ...body, status: 'Open', employee: body.employee || account.name };
+    // partners are view-only, except Module 11 (Disputes & Adjustments): they may raise disputes and add notes to THEIR OWN disputes
+    const meP = await employeeOf(account);
+    const myName = meP ? meP.name : account.name;
+    if (name === 'transactions' && meP) return ownTransactionWrite({ me: meP, method, existing, body });
+    if (name === 'disputes' && method === 'POST') return { ...body, status: 'Open', employee: myName };
     if (name === 'disputes' && method === 'PUT') {
       if (!existing) throw httpError(404, 'Dispute not found.');
+      if (lc(existing.employee) !== lc(myName)) throw httpError(403, 'You can only add comments to your own disputes.');
       return { ...existing, comments: Array.isArray(body.comments) ? body.comments : existing.comments };
     }
     throw httpError(403, 'View-only access: you cannot change data.');
@@ -38,6 +58,7 @@ async function authoriseWrite({ account, name, method, id, body, existing }) {
     // employees may change only their phone number
     return { ...existing, phone: body.phone === undefined ? existing.phone : body.phone };
   }
+  if (name === 'transactions') return ownTransactionWrite({ me, method, existing, body });
   if (name === 'disputes' && method === 'POST') {
     return { ...body, employee: me.name, status: 'Open' };
   }
