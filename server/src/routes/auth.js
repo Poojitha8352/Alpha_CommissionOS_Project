@@ -68,9 +68,44 @@ router.get('/config', (req, res) => {
   res.json({ googleClientId: config.googleClientId, demoGoogle: !config.googleClientId && config.allowDemoGoogle });
 });
 
+// Admin creates a login WITH a password (Organisation Settings > Users & Invites): the person is Active and signs in directly.
+router.post('/provision', requireAuth, wrap(async (req, res) => {
+  if (req.account.role !== 'admin') throw httpError(403, 'Admin access required.');
+  const b = z.object({
+    email: z.string().trim().toLowerCase().email('Please enter a valid email address.'),
+    name: z.string().trim().max(100).optional().default(''),
+    password: z.string().min(6, 'Password must be at least 6 characters.').max(200),
+    role: z.string().trim().max(60).optional().default('Salesperson'),
+  }).parse(req.body);
+
+  const rec = await employeeRecordFor(b.email);
+  let role;
+  if (rec) role = isPartnerRec(rec) ? 'user' : 'employee';       // the Employees & Partners type decides the portal
+  else if (/admin/i.test(b.role)) role = 'admin';
+  else if (/partner/i.test(b.role)) role = 'user';
+  else role = 'employee';
+
+  const passwordHash = await hashPassword(b.password);
+  const existing = await prisma.account.findUnique({ where: { email: b.email } });
+  if (existing) {
+    if (existing.role === 'admin' && role !== 'admin') throw httpError(409, 'This e-mail is an admin account.');
+    await prisma.account.update({
+      where: { id: existing.id },
+      data: { passwordHash, role, status: 'Active', tokenVersion: existing.tokenVersion + 1 },
+    });
+  } else {
+    await prisma.account.create({
+      data: { name: b.name || (rec && rec.name) || b.email.split('@')[0], email: b.email, role, provider: 'Email', passwordHash },
+    });
+  }
+  res.status(201).json({ ok: true, role });
+}));
+
 router.post('/register', wrap(async (req, res) => {
   const body = credentials.parse(req.body);
   if (body.portal === 'admin') throw httpError(403, 'Admin accounts cannot be self-registered.');
+  // employees and partners do not create their own accounts: the admin invites them (Organisation Settings > Users & Invites)
+  throw httpError(403, 'Accounts are created by your administrator. Please use the invitation e-mail, or ask your admin to invite you.');
   const existing = await prisma.account.findUnique({ where: { email: body.email } });
   if (existing) throw httpError(409, 'An account with this email already exists. Please sign in.');
   // employees can only join with the e-mail the admin added to Employees & Partners (as type Employee)
@@ -98,7 +133,7 @@ router.post('/login', wrap(async (req, res) => {
   if (!account) {
     throw httpError(404, body.portal === 'admin'
       ? 'No admin account found with this email.'
-      : 'No account found for this email. Please create an account first.');
+      : 'No account found for this email. Please ask your administrator to create your login.');
   }
   if (!(await checkPassword(body.password, account.passwordHash))) throw httpError(401, 'Incorrect password.');
   const ready = await assertPortal(account, body.portal);

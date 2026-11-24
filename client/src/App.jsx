@@ -352,6 +352,68 @@ const downloadCSV = (filename, headers, rows) => {
 // ============================================================================
 // SECTION 14: SAAS SUBSCRIPTION PLANS SPECIFICATION DATA
 // ============================================================================
+// What a plan unlocks is CUMULATIVE: Growth includes Starter, Business includes Growth, Enterprise includes everything.
+const PLAN_ORDER = ["starter", "growth", "business", "enterprise"];
+let PLAN_ID = "starter"; // set from the active subscription on every render of the app
+const planTierOf = (id) => Math.max(0, PLAN_ORDER.indexOf(id));
+const planAtLeast = (min) => planTierOf(PLAN_ID) >= planTierOf(min);
+const PLAN_LABEL = { starter: "Starter", growth: "Growth", business: "Business", enterprise: "Enterprise" };
+// whole modules that need a higher plan: [minimum plan, feature name]
+const MODULE_MIN_PLAN = {
+  reversals: ["growth", "Returns, refunds & clawback automation"],
+  approvals: ["business", "7-stage approval workflow & statement locking"],
+  payouts: ["business", "Bank payout reconciliation"],
+  disputes: ["business", "Dispute portal & adjustments"],
+};
+// Starter has only Model A (Fixed %) and Model B (Per-Sale); Growth and above have all 7 models
+const STARTER_MODELS = ["A", "B"];
+// reports: Starter 5, Growth 9, Business and above all 13
+const REPORT_MIN_PLAN = {
+  monthly: "starter", employee: "starter", partner: "starter", product: "starter", team: "starter",
+  target: "growth", pending: "growth", approved: "growth", reversal: "growth",
+  payout: "business", adjustment: "business", dispute: "business", liability: "business",
+};
+// the plan a PARTNER account has paid for = its own latest successful invoice (the server only sends a partner its own invoices).
+// no invoice yet -> Starter. Admin and employees are not subscribers, so no plan limits apply to them.
+const planFromInvoices = (invoices) => {
+  const paid = (invoices || []).filter((i) => !/fail|cancel|refund|void/i.test(String(i.status || "")));
+  for (const inv of paid) {
+    const id = inv.planId || (String(inv.plan || "").toLowerCase().match(/starter|growth|business|enterprise/) || [])[0];
+    if (id && PLAN_ORDER.includes(id)) return id;
+  }
+  return "starter";
+};
+const parseLooseDate = (v) => {
+  const t = String(v || "").trim();
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  m = t.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+  const d = new Date(t);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+function PlanLocked({ feature, need, canUpgrade, onUpgrade }) {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center shadow-xs max-w-xl mx-auto">
+      <div className="text-4xl mb-3">🔒</div>
+      <h3 className="text-lg font-extrabold text-slate-900">{feature}</h3>
+      <p className="text-sm text-slate-600 mt-2">
+        This feature is included from the <strong>{PLAN_LABEL[need]}</strong> plan. Your current plan is{" "}
+        <strong>{PLAN_LABEL[PLAN_ID]}</strong>. Pay for the {PLAN_LABEL[need]} plan from your e-mail account to unlock it.
+      </p>
+      {canUpgrade ? (
+        <button
+          onClick={onUpgrade}
+          className="mt-5 px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-bold"
+        >
+          View plans & subscribe
+        </button>
+      ) : (
+        <p className="text-xs text-slate-500 mt-4">Ask your admin to upgrade the subscription.</p>
+      )}
+    </div>
+  );
+}
 const SAAS_PLANS = [
   {
     id: "starter",
@@ -1084,7 +1146,7 @@ function LoginPage({ mode, authConfig, onSignIn, onRegister, onGoogle }) {
               </div>
               <p className="text-xs text-slate-500 -mt-2">{meta.sub}</p>
 
-              {!isAdmin && (
+              {false && (
                 <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl text-xs">
                   {[
                     ["signin", "Sign In"],
@@ -1737,6 +1799,7 @@ function ReportsOverview({ statements, employees }) {
   });
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <AnimStyles />
       <div className="rounded-2xl border border-slate-200 bg-white p-5">
         <div className="text-sm font-bold text-slate-900">
           Commission by employee — Bar graph
@@ -1782,6 +1845,8 @@ function ReportsOverview({ statements, employees }) {
                   height={h}
                   rx="6"
                   fill={colors[i % colors.length]}
+                  className="an-bar"
+                  style={{ animationDelay: `${i * 110}ms` }}
                 >
                   <title>{`${d.label}: ${formatINR(d.value)}`}</title>
                 </rect>
@@ -1792,6 +1857,8 @@ function ReportsOverview({ statements, employees }) {
                   textAnchor="middle"
                   fill="#E4E4E7"
                   fontWeight="700"
+                  className="an-fade"
+                  style={{ animationDelay: `${700 + i * 110}ms` }}
                 >
                   {compact(d.value)}
                 </text>
@@ -1814,32 +1881,34 @@ function ReportsOverview({ statements, employees }) {
           Commission status — Pie chart
         </div>
         <div className="text-[11px] text-slate-500 mb-2">
-          Paid vs approved vs pending · total {formatINR(total)}
+          Paid vs approved vs pending · total <CountUpText text={formatINR(total)} />
         </div>
         <div className="flex flex-wrap items-center justify-center gap-6">
           <svg viewBox="0 0 200 200" className="w-48 h-48 shrink-0">
-            {slices.map((s) => (
+            {slices.map((s, si) => (
               <path
                 key={s.label}
                 d={s.path}
                 fill={s.color}
                 stroke="#18181B"
                 strokeWidth="2"
+                className="an-slice"
+                style={{ animationDelay: `${si * 160}ms` }}
               >
                 <title>{`${s.label}: ${formatINR(s.value)} (${s.pct.toFixed(1)}%)`}</title>
               </path>
             ))}
           </svg>
           <div className="space-y-2 text-xs min-w-[170px]">
-            {slices.map((s) => (
-              <div key={s.label} className="flex items-center gap-2">
+            {slices.map((s, si) => (
+              <div key={s.label} className="flex items-center gap-2 an-fade-up" style={{ animationDelay: `${500 + si * 120}ms` }}>
                 <span
                   className="w-3 h-3 rounded-sm"
                   style={{ backgroundColor: s.color }}
                 />
                 <span className="text-slate-700 font-medium">{s.label}</span>
                 <span className="ml-auto font-bold text-slate-900">
-                  {s.pct.toFixed(1)}%
+                  <CountUpText text={`${s.pct.toFixed(1)}%`} />
                 </span>
               </div>
             ))}
@@ -3791,6 +3860,8 @@ if (!dataReady) {
 
 const activePlan =
   SAAS_PLANS.find((p) => p.id === subscription.planId) || SAAS_PLANS[2];
+// plan limits & locked features: admin and employees are never restricted; a partner gets exactly what the plan it paid for includes
+PLAN_ID = isPartner ? planFromInvoices(billingInvoices) : "enterprise";
 
 // Navigation Definition (12 Core Modules + Organisation Settings & Subscription/Billing)
 const coreItems = [
@@ -3994,6 +4065,10 @@ const current = allNavItems.some((n) => n.id === activeModule) || activeModule =
   : isEmployee
     ? "myprofile"
     : "dashboard";
+
+// a module that needs a higher plan than the one subscribed
+const planLock =
+  MODULE_MIN_PLAN[current] && !planAtLeast(MODULE_MIN_PLAN[current][0]) ? MODULE_MIN_PLAN[current] : null;
 
 // Dynamic Brand Logo Renderer
 const renderBrandMark = () => {
@@ -4394,7 +4469,7 @@ return (
             <ModuleTransactions
               transactions={transactions}
               setTransactions={setTransactions}
-              employees={employees}
+              employees={scoped.employees}
               departments={departments}
               me={
                 isAdmin
@@ -4408,7 +4483,7 @@ return (
           )}
           {current === "calculator" && (
             <ModuleCalculator
-              employees={employees}
+              employees={scoped.employees}
               policies={policies}
               transactions={transactions}
               calcRuns={calcRuns}
@@ -4420,7 +4495,15 @@ return (
               notify={notify}
             />
           )}
-          {current === "reversals" && (
+          {planLock && (
+            <PlanLocked
+              feature={planLock[1]}
+              need={planLock[0]}
+              canUpgrade={isAdmin || isPartner}
+              onUpgrade={() => setActiveModule("billing")}
+            />
+          )}
+          {current === "reversals" && !planLock && (
             <ModuleReversals
               transactions={transactions}
               reversals={reversals}
@@ -4437,14 +4520,14 @@ return (
               statements={statements}
               setStatements={setStatements}
               transactions={transactions}
-              employees={employees}
+              employees={scoped.employees}
               policies={policies}
               reversals={reversals}
               adjustments={adjustments}
               notify={notify}
             />
           )}
-          {current === "approvals" && (
+          {current === "approvals" && !planLock && (
             <ModuleApprovals
               transactionsTotal={scoped.transactions.length}
               statements={scoped.statements}
@@ -4456,7 +4539,7 @@ return (
               notify={notify}
             />
           )}
-          {current === "payouts" && (
+          {current === "payouts" && !planLock && (
             <ModulePayouts
               payouts={payouts}
               setPayouts={setPayouts}
@@ -4464,7 +4547,7 @@ return (
               notify={notify}
             />
           )}
-          {current === "disputes" && (
+          {current === "disputes" && !planLock && (
             <ModuleDisputes
               disputes={disputes}
               setDisputes={setDisputes}
@@ -4475,14 +4558,14 @@ return (
               setActiveModule={setActiveModule}
               accessLevel={authRole}
               currentUserName={session.name}
-              employees={employees}
+              employees={scoped.employees}
               org={org}
               notify={notify}
             />
           )}
           {current === "reports" && (
             <ModuleReports
-              employees={employees}
+              employees={scoped.employees}
               transactions={transactions}
               statements={statements}
               payouts={payouts}
@@ -4687,6 +4770,7 @@ function ModuleOrgSettings({
     name: "",
     role: "Salesperson",
     department: "Sales",
+    password: "",
   });
   const [tab, setTab] = useState("profile");
   const fileRef = useRef(null);
@@ -4756,9 +4840,15 @@ function ModuleOrgSettings({
     }
   };
 
-  const handleInviteUser = (e) => {
+  const handleInviteUser = async (e) => {
     e.preventDefault();
     if (!invite.email.trim()) return;
+    const userLimit = (SAAS_PLANS.find((p) => p.id === PLAN_ID) || SAAS_PLANS[0]).limits.users;
+    const seatsUsed = users.filter((u) => !/cancel|suspend/i.test(String(u.status || ""))).length;
+    if (seatsUsed >= userLimit) {
+      notify(`Your ${PLAN_LABEL[PLAN_ID]} plan allows ${userLimit} active users. Upgrade your subscription to add more.`, "error");
+      return;
+    }
     const created = {
       id: `USR0${users.length + 1}`,
       email: invite.email.trim(),
@@ -4767,13 +4857,32 @@ function ModuleOrgSettings({
       department: invite.department,
       status: "Invited",
     };
+    const emptyInvite = { email: "", name: "", role: "Salesperson", department: "Sales", password: "" };
+    // a password was typed: create the login right now (Active) - the person signs in directly, no invitation link needed
+    if (invite.password) {
+      if (invite.password.length < 6) {
+        notify("Password must be at least 6 characters.", "error");
+        return;
+      }
+      try {
+        await api.post("/auth/provision", {
+          email: created.email,
+          name: created.name,
+          role: created.role,
+          department: created.department,
+          password: invite.password,
+        });
+      } catch (err) {
+        notify(err.message, "error");
+        return;
+      }
+      setUsers((prev) => [...prev, { ...created, status: "Active" }]);
+      setInvite(emptyInvite);
+      notify(`Login created for ${created.email}. They can sign in directly with this e-mail and the password you set.`);
+      return;
+    }
     setUsers((prev) => [...prev, created]);
-    setInvite({
-      email: "",
-      name: "",
-      role: "Salesperson",
-      department: "Sales",
-    });
+    setInvite(emptyInvite);
     notify(`Creating invitation for ${created.email}…`);
     openInviteMail(created);
   };
@@ -5427,8 +5536,16 @@ function ModuleOrgSettings({
               type="submit"
               className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2.5 whitespace-nowrap flex items-center justify-center gap-1.5"
             >
-              <Send className="w-3.5 h-3.5" /> Send Invite
+              <Send className="w-3.5 h-3.5" /> {invite.password ? "Create Login" : "Send Invite"}
             </button>
+            <input
+              type="text"
+              autoComplete="off"
+              placeholder="Set a password (optional): they can then sign in directly. Leave empty to e-mail an invitation link."
+              value={invite.password}
+              onChange={(e) => setInvite({ ...invite, password: e.target.value })}
+              className={`${inputCls} sm:col-span-4`}
+            />
           </form>
           <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 overflow-hidden">
             {users.map((u) => (
@@ -7466,6 +7583,68 @@ function ProfilePage({ session, roleText, accessText, orgName, record, onSignOut
   );
 }
 
+// ---------- animation helpers: numbers count up from 0, bars rise from the bottom, progress bars fill ----------
+const ANIM_CSS = `
+@keyframes anBarUp { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes anFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes anFadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes anFill { from { width: 0; } to { width: var(--w); } }
+@keyframes anDraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes anPop { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: scale(1); } }
+@keyframes anSlice { from { opacity: 0; transform: scale(.35) rotate(-90deg); } to { opacity: 1; transform: scale(1) rotate(0deg); } }
+.an-bar { transform-box: fill-box; transform-origin: 50% 100%; animation: anBarUp .9s cubic-bezier(.22,.9,.3,1) both; }
+.an-fade { animation: anFade .6s ease both; }
+.an-fade-up { animation: anFadeUp .5s ease both; }
+.an-fill { animation: anFill 1.2s cubic-bezier(.22,.9,.3,1) both; }
+.an-line { stroke-dasharray: 1; animation: anDraw 1.2s ease-out both; }
+.an-pop { transform-box: fill-box; transform-origin: center; animation: anPop .6s ease both; }
+.an-slice { transform-origin: 100px 100px; animation: anSlice .9s cubic-bezier(.22,.9,.3,1) both; }
+@media (prefers-reduced-motion: reduce) { .an-bar, .an-fade, .an-fade-up, .an-fill, .an-line, .an-pop, .an-slice { animation: none !important; } }
+`;
+function AnimStyles() {
+  return <style>{ANIM_CSS}</style>;
+}
+
+// counts a number from 0 up to `target`, then stops
+function useCountUp(target, duration = 1200) {
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    const reduce = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || !Number.isFinite(target)) {
+      setVal(Number.isFinite(target) ? target : 0);
+      return undefined;
+    }
+    let raf;
+    const start = performance.now();
+    const tick = (now) => {
+      const p = Math.min(1, (now - start) / duration);
+      setVal(target * (1 - Math.pow(1 - p, 3)));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    setVal(0);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, duration]);
+  return val;
+}
+
+// shows a formatted text such as "₹2,95,000" or "83%" and counts its number up from 0
+function CountUpText({ text, duration = 1200 }) {
+  const s = String(text ?? "");
+  const m = s.match(/\d[\d,]*(\.\d+)?/);
+  const v = useCountUp(m ? parseFloat(m[0].replace(/,/g, "")) : 0, duration);
+  if (!m) return <>{s}</>;
+  const decimals = m[1] ? m[1].length - 1 : 0;
+  const shown = v.toLocaleString("en-IN", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  return (
+    <>
+      {s.slice(0, m.index)}
+      {shown}
+      {s.slice(m.index + m[0].length)}
+    </>
+  );
+}
+
 function ModuleDashboard({
   org,
   roleView,
@@ -7542,15 +7721,16 @@ function ModuleDashboard({
   // partner view: every card shows only that partner's own numbers
   const myRow = employees[0] || {};
   const num = (v) => Number(v) || 0;
-  const mineValues = {
-    "Total Eligible Sales": transactions.reduce((t, x) => t + num(x.eligibleBase), 0), // same total as the details popup (own transactions)
-    "Calculated Commission": num(myRow.earnedCommission),
-    "Pending Commission": num(myRow.pendingCommission),
-    "Approved Commission": num(myRow.approvedCommission),
-    "Paid Commission": num(myRow.paidCommission),
-    "Outstanding Payouts": Math.max(0, num(myRow.approvedCommission) - num(myRow.paidCommission)),
+  const totals = {
+    "Total Eligible Sales": transactions.reduce((t, x) => t + num(x.eligibleBase), 0),
+    "Calculated Commission": employees.reduce((t, e) => t + num(e.earnedCommission), 0),
+    "Pending Commission": employees.reduce((t, e) => t + num(e.pendingCommission), 0),
+    "Approved Commission": employees.reduce((t, e) => t + num(e.approvedCommission), 0),
+    "Paid Commission": employees.reduce((t, e) => t + num(e.paidCommission), 0),
+    "Outstanding Payouts": employees.reduce((t, e) => t + Math.max(0, num(e.approvedCommission) - num(e.paidCommission)), 0),
     "Reversed Commission": reversals.reduce((t, r) => t + num(r.reversedCommission), 0),
   };
+  const mineValues = totals;
   const mineSubs = {
     "Total Eligible Sales": "Your validated sales",
     "Calculated Commission": "Your earned commission",
@@ -7560,22 +7740,76 @@ function ModuleDashboard({
     "Outstanding Payouts": "Approved minus paid",
     "Reversed Commission": "Clawbacks on your refunds",
   };
-  const kpiList = onlyMine
-    ? ownerKpis.map((k) => ({
-      ...k,
-      value: formatINR(mineValues[k.label]),
-      sub: mineSubs[k.label],
-      badge: "Your data",
-    }))
-    : ownerKpis;
+  const kpiList = ownerKpis.map((k) => ({
+    ...k,
+    value: formatINR(totals[k.label]),
+    ...(onlyMine
+      ? {
+        sub: mineSubs[k.label],
+        badge: "Your data",
+        title: k.label === "Total Eligible Sales" ? "My Eligible Sales" : k.label,
+      }
+      : {}),
+  }));
 
-  const monthlySeries = [
-    { month: "Jun", sales: 16.5, comm: 0.98 },
-    { month: "Jul", sales: 18.2, comm: 1.09 },
-    { month: "Aug", sales: 19.8, comm: 1.18 },
-    { month: "Sep", sales: 21.4, comm: 1.28 },
-    { month: "Oct", sales: 22.9, comm: 1.37 },
-    { month: "Nov", sales: 25.0, comm: 1.5 },
+  // employee / partner: the 6-month trend is built from THEIR OWN transactions
+  const toDateLoose = (v) => {
+    const t = String(v || "").trim();
+    let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+    m = t.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+    const d = new Date(t);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  const mineMonthly = (() => {
+    const dates = transactions.map((t) => toDateLoose(t.date)).filter(Boolean);
+    const anchor = dates.length ? new Date(Math.max(...dates.map((d) => d.getTime()))) : new Date();
+    const months = [];
+    for (let i = 5; i >= 0; i -= 1) {
+      const d = new Date(anchor.getFullYear(), anchor.getMonth() - i, 1);
+      months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, month: d.toLocaleString("en-US", { month: "short" }), sales: 0 });
+    }
+    transactions.forEach((t) => {
+      const d = toDateLoose(t.date);
+      if (!d) return;
+      const m = months.find((x) => x.key === `${d.getFullYear()}-${d.getMonth()}`);
+      if (m) m.sales += num(t.eligibleBase) / 1e5;
+    });
+    const totalSales = months.reduce((a, m) => a + m.sales, 0);
+    const earned = num(myRow.earnedCommission) / 1e5;
+    return months.map((m) => ({
+      month: m.month,
+      sales: Math.round(m.sales * 100) / 100,
+      comm: totalSales > 0 ? Math.round(earned * (m.sales / totalSales) * 100) / 100 : 0,
+    }));
+  })();
+  const monthlySeries = onlyMine
+    ? mineMonthly
+    : [
+      { month: "Jun", sales: 16.5, comm: 0.98 },
+      { month: "Jul", sales: 18.2, comm: 1.09 },
+      { month: "Aug", sales: 19.8, comm: 1.18 },
+      { month: "Sep", sales: 21.4, comm: 1.28 },
+      { month: "Oct", sales: 22.9, comm: 1.37 },
+      { month: "Nov", sales: 25.0, comm: 1.5 },
+    ];
+  const niceMax = (v, min) => {
+    const x = Math.max(v, min);
+    const p = Math.pow(10, Math.floor(Math.log10(x)));
+    return Math.ceil(x / p) * p;
+  };
+  const salesMax = onlyMine ? niceMax(Math.max(...monthlySeries.map((d) => d.sales)), 1) : 28;
+  const commMax = onlyMine ? niceMax(Math.max(...monthlySeries.map((d) => d.comm)), 0.1) : 2;
+  const fmtLakh = (v) => `₹${(num(v) / 1e5).toFixed(1)}L`;
+  const myTarget = num(myRow.monthlyTarget);
+  const mineTargets = [
+    {
+      team: myRow.name || "You",
+      achieved: myTarget > 0 ? Math.round((num(myRow.eligibleSales) / myTarget) * 100) : 0,
+      amount: myTarget > 0 ? `${fmtLakh(myRow.eligibleSales)} / ${fmtLakh(myTarget)}` : "No target set",
+      color: "bg-emerald-500",
+    },
   ];
 
   // Decorative illustration shown behind each KPI card (inline SVG, no external images)
@@ -7629,10 +7863,10 @@ function ModuleDashboard({
         </div>
         <div className="relative">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            {kpi.label}
+            {kpi.title || kpi.label}
           </div>
           <div className="text-2xl font-extrabold text-slate-900 mt-0.5 tracking-tight">
-            {kpi.value}
+            <CountUpText text={kpi.value} />
           </div>
         </div>
         <div className="relative pt-3 mt-auto border-t border-slate-100 text-xs text-slate-500 flex items-center justify-between gap-2">
@@ -7665,7 +7899,7 @@ function ModuleDashboard({
         });
         return {
           total: sum(transactions, (t) => t.eligibleBase),
-          totalLabel: "Total Eligible Base (all transactions)",
+          totalLabel: onlyMine ? "My Eligible Base (my transactions)" : "Total Eligible Base (all transactions)",
           summary: Object.entries(bySp).map(([k, v]) => [k, formatINR(v)]),
           summaryTitle: "By Salesperson / Partner",
           headers: ["Txn ID", "Invoice", "Customer", "Product", "Date", "Salesperson", "Invoice Amt", "Discount", "Eligible Base", "Status"],
@@ -7715,7 +7949,7 @@ function ModuleDashboard({
           >
             <div className="flex items-start justify-between gap-3 px-6 py-4 border-b border-slate-100">
               <div>
-                <h3 className="text-lg font-extrabold text-slate-900">{kpiDetail.label}</h3>
+                <h3 className="text-lg font-extrabold text-slate-900">{(kpiList.find((k) => k.label === kpiDetail.label) || {}).title || kpiDetail.label}</h3>
                 <p className="text-xs text-slate-500">
                   {kpiDetail.sub} • Period: {dateFilter}
                 </p>
@@ -7816,6 +8050,7 @@ function ModuleDashboard({
         </div>
       </div>
 
+      <AnimStyles />
       {/* VIEW A: BUSINESS OWNER DASHBOARD */}
       {(
         <div key={`owner-${dateFilter}`} className="space-y-6 anim-switch">
@@ -7830,7 +8065,7 @@ function ModuleDashboard({
           </div>
 
           {/* Analytics Row */}
-          {!onlyMine && (
+          {(
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
               <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
@@ -7874,7 +8109,7 @@ function ModuleDashboard({
                         textAnchor="end"
                         fill="#71717A"
                       >
-                        ₹{Math.round(28 * t)}L
+                        ₹{salesMax * t >= 10 ? Math.round(salesMax * t) : Number((salesMax * t).toFixed(1))}L
                       </text>
                       <text
                         x="526"
@@ -7883,7 +8118,7 @@ function ModuleDashboard({
                         textAnchor="start"
                         fill="#059669"
                       >
-                        {(2 * t).toFixed(1)}L
+                        {(commMax * t).toFixed(commMax >= 1 ? 1 : 2)}L
                       </text>
                     </g>
                   );
@@ -7891,7 +8126,7 @@ function ModuleDashboard({
                 {monthlySeries.map((d, i) => {
                   const slot = 476 / monthlySeries.length;
                   const cx = 44 + slot * i + slot / 2;
-                  const h = (d.sales / 28) * 180;
+                  const h = (d.sales / salesMax) * 180;
                   return (
                     <g key={d.month}>
                       <rect
@@ -7902,6 +8137,8 @@ function ModuleDashboard({
                         rx="6"
                         fill="#DC2626"
                         opacity="0.92"
+                        className="an-bar"
+                        style={{ animationDelay: `${i * 90}ms` }}
                       >
                         <title>{`${d.month}: ₹${d.sales}L sales`}</title>
                       </rect>
@@ -7912,6 +8149,8 @@ function ModuleDashboard({
                         fontWeight="700"
                         textAnchor="middle"
                         fill="#1E3A8A"
+                        className="an-fade"
+                        style={{ animationDelay: `${650 + i * 90}ms` }}
                       >
                         ₹{d.sales}L
                       </text>
@@ -7932,10 +8171,13 @@ function ModuleDashboard({
                   fill="none"
                   stroke="#10B981"
                   strokeWidth="2.5"
+                  pathLength="1"
+                  className="an-line"
+                  style={{ animationDelay: "500ms" }}
                   points={monthlySeries
                     .map(
                       (d, i) =>
-                        `${44 + (476 / monthlySeries.length) * i + 476 / monthlySeries.length / 2},${200 - (d.comm / 2) * 180}`,
+                        `${44 + (476 / monthlySeries.length) * i + 476 / monthlySeries.length / 2},${200 - (d.comm / commMax) * 180}`,
                     )
                     .join(" ")}
                 />
@@ -7947,7 +8189,9 @@ function ModuleDashboard({
                       (476 / monthlySeries.length) * i +
                       476 / monthlySeries.length / 2
                     }
-                    cy={200 - (d.comm / 2) * 180}
+                    cy={200 - (d.comm / commMax) * 180}
+                    className="an-pop"
+                    style={{ animationDelay: `${800 + i * 90}ms` }}
                     r="4.5"
                     fill="#fff"
                     stroke="#10B981"
@@ -7962,13 +8206,13 @@ function ModuleDashboard({
             {/* Team Target Achievement */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col">
               <h3 className="text-base font-bold text-slate-900">
-                Team Target Achievement
+                {onlyMine ? "My Target Achievement" : "Team Target Achievement"}
               </h3>
               <p className="text-xs text-slate-500 mb-5">
-                Quota attainment across departments
+                {onlyMine ? "Your sales against your monthly target" : "Quota attainment across departments"}
               </p>
               <div className="space-y-4 flex-1">
-                {[
+                {(onlyMine ? mineTargets : [
                   {
                     team: "Sales (Bangalore)",
                     achieved: 124,
@@ -7993,21 +8237,21 @@ function ModuleDashboard({
                     amount: "₹2.5L / ₹3.0L",
                     color: "bg-amber-500",
                   },
-                ].map((t) => (
+                ]).map((t, ti) => (
                   <div key={t.team}>
                     <div className="flex justify-between items-baseline text-xs font-semibold mb-1.5 gap-2">
                       <span className="text-slate-800">{t.team}</span>
                       <span className="text-slate-500 font-medium whitespace-nowrap">
                         <strong className="text-slate-900">
-                          {t.achieved}%
+                          <CountUpText text={`${t.achieved}%`} duration={1400} />
                         </strong>{" "}
                         · {t.amount}
                       </span>
                     </div>
                     <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full ${t.color}`}
-                        style={{ width: `${Math.min(100, t.achieved)}%` }}
+                        className={`h-full rounded-full an-fill ${t.color}`}
+                        style={{ width: `${Math.min(100, t.achieved)}%`, "--w": `${Math.min(100, t.achieved)}%`, animationDelay: `${ti * 150}ms` }}
                       />
                     </div>
                   </div>
@@ -8019,7 +8263,7 @@ function ModuleDashboard({
                     Outstanding Payout Summary
                   </div>
                   <div className="text-sm font-bold text-slate-900">
-                    ₹40,000 across 3 batches
+                    {onlyMine ? `${formatINR(mineValues["Outstanding Payouts"])} outstanding to you` : "₹40,000 across 3 batches"}
                   </div>
                 </div>
                 <button
@@ -8854,6 +9098,15 @@ function ModulePolicies({ policies, setPolicies, canManage = true, notify }) {
 
   const handleCreatePolicy = (e) => {
     e.preventDefault();
+    const polLimit = (SAAS_PLANS.find((p) => p.id === PLAN_ID) || SAAS_PLANS[0]).limits.policies;
+    if (!editingPolicyId && policies.length >= polLimit) {
+      notify(`Your ${PLAN_LABEL[PLAN_ID]} plan allows ${polLimit} commission policies. Upgrade your subscription to add more.`, "error");
+      return;
+    }
+    if (!planAtLeast("growth") && !STARTER_MODELS.includes(newPolicy.model)) {
+      notify("The Starter plan includes Model A (Fixed %) and Model B (Per-Sale). All 7 models are included from the Growth plan.", "error");
+      return;
+    }
     if (editingPolicyId) {
       const old = policies.find((p) => p.id === editingPolicyId);
       const [maj, min] = String(old?.version || "v1.0").replace("v", "").split(".").map((n) => parseInt(n, 10) || 0);
@@ -9358,11 +9611,14 @@ function ModulePolicies({ policies, setPolicies, canManage = true, notify }) {
                   }
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-semibold"
                 >
-                  {Object.entries(modelNames).map(([k, label]) => (
-                    <option key={k} value={k}>
-                      {label}
-                    </option>
-                  ))}
+                  {Object.entries(modelNames).map(([k, label]) => {
+                    const locked = !planAtLeast("growth") && !STARTER_MODELS.includes(k);
+                    return (
+                      <option key={k} value={k} disabled={locked}>
+                        {label}{locked ? " 🔒 Growth plan" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             </div>
@@ -9711,8 +9967,24 @@ function ModuleTransactions({
     "Reversed",
   ];
 
+  // plan limit: sales transactions per calendar month
+  const txnLimitReached = (adding) => {
+    const limit = (SAAS_PLANS.find((p) => p.id === PLAN_ID) || SAAS_PLANS[0]).limits.transactions;
+    const now = new Date();
+    const inMonth = transactions.filter((t) => {
+      const d = parseLooseDate(t.date);
+      return d && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    }).length;
+    if (inMonth + adding > limit) {
+      notify(`Your ${PLAN_LABEL[PLAN_ID]} plan allows ${limit.toLocaleString("en-IN")} sales transactions per month. Upgrade your subscription to add more.`, "error");
+      return true;
+    }
+    return false;
+  };
+
   const handleManualSubmit = (e) => {
     e.preventDefault();
+    if (txnLimitReached(1)) return;
     const eligibleBase = Math.max(
       0,
       Number(manual.invoiceAmount) - Number(manual.discount),
@@ -9787,6 +10059,7 @@ function ModuleTransactions({
 
   const confirmImportRows = () => {
     const validOnes = stagedRows.filter((r) => r.valid);
+    if (txnLimitReached(validOnes.length)) return;
     const mapped = validOnes.map((r, i) => ({
       id: `TXN00${transactions.length + i + 1}`,
       invoiceNumber: r.invoiceNumber,
@@ -9846,6 +10119,10 @@ function ModuleTransactions({
           </button>
           <button
             onClick={() => {
+              if (!planAtLeast("growth")) {
+                notify("The CSV & Excel bulk import wizard is included from the Growth plan. Upgrade in Subscription & Billing.", "error");
+                return;
+              }
               setEntryMode("import");
               setImportType("CSV");
             }}
@@ -9854,10 +10131,14 @@ function ModuleTransactions({
               : "bg-emerald-50 text-emerald-700"
               }`}
           >
-            2. CSV Import Wizard
+            {planAtLeast("growth") ? "" : "🔒 "}2. CSV Import Wizard
           </button>
           <button
             onClick={() => {
+              if (!planAtLeast("growth")) {
+                notify("The CSV & Excel bulk import wizard is included from the Growth plan. Upgrade in Subscription & Billing.", "error");
+                return;
+              }
               setEntryMode("import");
               setImportType("Excel");
             }}
@@ -9866,7 +10147,7 @@ function ModuleTransactions({
               : "bg-sky-50 text-sky-700"
               }`}
           >
-            3. Excel (.xlsx) Import Wizard
+            {planAtLeast("growth") ? "" : "🔒 "}3. Excel (.xlsx) Import Wizard
           </button>
         </div>
 
@@ -10303,7 +10584,8 @@ function ModuleCalculator({
   notify,
 }) {
   const [period, setPeriod] = useState("November 2026");
-  const [targetScope, setTargetScope] = useState("ALL");
+  // employee / partner: the list holds only their own record, so that is what is selected
+  const [targetScope, setTargetScope] = useState(canCalculate ? "ALL" : (employees[0] && employees[0].id) || "ALL");
   const [running, setRunning] = useState(false);
   const [resultPopup, setResultPopup] = useState(null);
   const results = engine.results;
@@ -10606,10 +10888,10 @@ function ModuleCalculator({
                 onChange={(e) => setTargetScope(e.target.value)}
                 className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs font-semibold bg-white"
               >
-                <option value="ALL">All Employees & Partners</option>
-                <option value="Sales">Team: Sales</option>
-                <option value="Enterprise">Team: Enterprise</option>
-                <option value="Channel Partners">Team: Channel Partners</option>
+                {canCalculate && <option value="ALL">All Employees & Partners</option>}
+                {canCalculate && <option value="Sales">Team: Sales</option>}
+                {canCalculate && <option value="Enterprise">Team: Enterprise</option>}
+                {canCalculate && <option value="Channel Partners">Team: Channel Partners</option>}
                 {employees.map((e) => (
                   <option key={e.id} value={e.id}>
                     {e.name} ({e.id})
@@ -11069,34 +11351,35 @@ function ModuleReversals({
 
   return (
     <div className="space-y-6">
+      <AnimStyles />
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
         <h3 className="text-base font-bold text-slate-900 mb-3">
           Latest Commission Reversal Snapshot ({reversals[0]?.id} — Linked to{" "}
           {reversals[0]?.transactionId})
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 an-fade-up" style={{ animationDelay: "0ms" }}>
             <div className="text-xs text-slate-500">Original Commission</div>
             <div className="text-xl font-extrabold text-slate-900 mt-1">
-              {formatINR(reversals[0]?.originalCommission || 5000)}
+              <CountUpText text={formatINR(reversals[0]?.originalCommission || 5000)} />
             </div>
           </div>
-          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200">
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 an-fade-up" style={{ animationDelay: "120ms" }}>
             <div className="text-xs text-amber-700">Refund Amount</div>
             <div className="text-xl font-extrabold text-amber-900 mt-1">
-              {formatINR(reversals[0]?.refundAmount || 20000)}
+              <CountUpText text={formatINR(reversals[0]?.refundAmount || 20000)} />
             </div>
           </div>
-          <div className="p-4 rounded-xl bg-rose-50 border border-rose-200">
+          <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 an-fade-up" style={{ animationDelay: "240ms" }}>
             <div className="text-xs text-rose-700">Reversed Commission</div>
             <div className="text-xl font-extrabold text-rose-800 mt-1">
-              {formatINR(reversals[0]?.reversedCommission || 1000)}
+              <CountUpText text={formatINR(reversals[0]?.reversedCommission || 1000)} />
             </div>
           </div>
-          <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+          <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 an-fade-up" style={{ animationDelay: "360ms" }}>
             <div className="text-xs text-emerald-700">Remaining Commission</div>
             <div className="text-xl font-extrabold text-emerald-900 mt-1">
-              {formatINR(reversals[0]?.remainingCommission || 4000)}
+              <CountUpText text={formatINR(reversals[0]?.remainingCommission || 4000)} />
             </div>
           </div>
         </div>
@@ -13713,6 +13996,8 @@ function ReportCharts({ reportId, headers, rows }) {
                   height={h}
                   rx="5"
                   fill={CHART_COLORS[i % CHART_COLORS.length]}
+                  className="an-bar"
+                  style={{ animationDelay: `${i * 90}ms` }}
                 >
                   <title>{`${d.label}: ${fmt(d.value)}`}</title>
                 </rect>
@@ -13723,6 +14008,8 @@ function ReportCharts({ reportId, headers, rows }) {
                   textAnchor="middle"
                   fill="#E4E4E7"
                   fontWeight="600"
+                  className="an-fade"
+                  style={{ animationDelay: `${650 + i * 90}ms` }}
                 >
                   {compact(d.value)}
                 </text>
@@ -13747,7 +14034,7 @@ function ReportCharts({ reportId, headers, rows }) {
           {cfg.name} — Pie Chart
         </div>
         <div className="text-[11px] text-slate-500 mb-2">
-          Share of total: {fmt(total)}
+          Share of total: <CountUpText text={fmt(total)} />
         </div>
         <div className="flex flex-wrap items-center justify-center gap-4">
           <svg viewBox="0 0 200 200" className="w-44 h-44 shrink-0">
@@ -13759,6 +14046,8 @@ function ReportCharts({ reportId, headers, rows }) {
                 fillRule="evenodd"
                 stroke="#18181B"
                 strokeWidth="1.5"
+                className="an-slice"
+                style={{ animationDelay: `${slices.indexOf(sl) * 120}ms` }}
               >
                 <title>{`${sl.label}: ${fmt(sl.value)} (${sl.pct.toFixed(1)}%)`}</title>
               </path>
@@ -13952,24 +14241,34 @@ function ModuleReports({
     <div className="space-y-6">
       <ReportsOverview statements={statements} employees={employees} />
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {reportCatalog.map((rep) => (
+        {reportCatalog.map((rep) => {
+          const repNeed = REPORT_MIN_PLAN[rep.id] || "starter";
+          const repLocked = !planAtLeast(repNeed);
+          return (
           <button
             key={rep.id}
-            onClick={() => setSelectedReport(rep.id)}
-            className={`text-left p-3.5 rounded-2xl border transition-all ${selectedReport === rep.id
+            onClick={() => {
+              if (repLocked) {
+                notify(`The ${rep.title} report is included from the ${PLAN_LABEL[repNeed]} plan. Upgrade in Subscription & Billing.`, "error");
+                return;
+              }
+              setSelectedReport(rep.id);
+            }}
+            className={`text-left p-3.5 rounded-2xl border transition-all ${repLocked ? "opacity-60 " : ""}${selectedReport === rep.id
                 ? 'bg-blue-600 text-white border-blue-600 shadow-md'
                 : 'bg-white text-slate-800 border-slate-200 hover:border-blue-300'
               }`}
           >
-            <div className="text-xs font-bold">{rep.title}</div>
+            <div className="text-xs font-bold">{repLocked ? "🔒 " : ""}{rep.title}</div>
             <div
               className={`text-[11px] mt-1 line-clamp-1 ${selectedReport === rep.id ? 'text-blue-100' : 'text-slate-500'
                 }`}
             >
-              {rep.desc}
+              {repLocked ? `Included from the ${PLAN_LABEL[repNeed]} plan` : rep.desc}
             </div>
           </button>
-        ))}
+          );
+        })}
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
@@ -14080,7 +14379,8 @@ function ModuleReports({
           </select>
         </div>
 
-        <ReportCharts reportId={selectedReport} headers={reportTable.headers} rows={reportTable.rows} />
+        <AnimStyles />
+        <ReportCharts key={selectedReport} reportId={selectedReport} headers={reportTable.headers} rows={reportTable.rows} />
 
         <div className="overflow-x-auto border border-slate-200 rounded-xl">
           <table className="w-full text-left text-xs">
@@ -14091,15 +14391,15 @@ function ModuleReports({
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody key={selectedReport} className="divide-y divide-slate-100">
               {reportTable.rows.map((row, rIdx) => (
-                <tr key={rIdx} className="hover:bg-slate-50/80">
+                <tr key={rIdx} className="hover:bg-slate-50/80 an-fade-up" style={{ animationDelay: `${Math.min(rIdx, 14) * 45}ms` }}>
                   {row.map((cell, cIdx) => (
                     <td
                       key={cIdx}
                       className={`py-3 px-4 ${cIdx === 0 ? 'font-bold text-blue-700' : 'text-slate-800'}`}
                     >
-                      {cell}
+                      {typeof cell === 'string' && cell.startsWith('₹') && rIdx < 30 ? <CountUpText text={cell} /> : cell}
                     </td>
                   ))}
                 </tr>

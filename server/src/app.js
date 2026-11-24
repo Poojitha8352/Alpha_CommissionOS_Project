@@ -1,4 +1,4 @@
-const fs = require("fs");
+﻿const fs = require("fs");
 const path = require("path");
 const express = require("express");
 const cors = require("cors");
@@ -61,6 +61,15 @@ function createApp() {
     max: 60,
     standardHeaders: true,
     legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    message: { error: "Too many attempts. Please try again in a few minutes." },
+  });
+  const inviteLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    skipSuccessfulRequests: true,
+    standardHeaders: true,
+    legacyHeaders: false,
     message: { error: "Too many attempts. Please try again in a few minutes." },
   });
   const contactLimiter = rateLimit({
@@ -76,7 +85,7 @@ function createApp() {
   );
 
   app.use("/api/auth", authLimiter, require("./routes/auth"));
-  app.use("/api/invites", authLimiter);
+  app.use("/api/invites", inviteLimiter);
   app.post("/api/contact", contactLimiter); // only the public form is rate limited, not the admin inbox
 
   // public: invites (token based), contact form
@@ -107,3 +116,4 @@ function createApp() {
 }
 
 module.exports = { createApp };
+
